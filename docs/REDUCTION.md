@@ -159,6 +159,28 @@ Three things the replacement must get right, because each failed silently before
 * 🔒 **The swarm is ONE parameter-shared agent** over `num_envs * N` rows, not `N`
   agents.
 
+### 🔒 One test must come back with the trainer
+
+`test_every_PBRS_safe_reward_knob_is_settable_from_the_command_line` was dropped
+with `test_train.py`, and it has to be rebuilt against the new entry point. It
+derives its list from `RewardWeights` itself — every field that is not an
+objective weight and not a physical reference lives inside `Φ`, is
+optimum-preserving, and must therefore be settable from the CLI, because a knob
+that cannot be set cannot be swept.
+
+📏 It has caught two real misses of exactly the same shape, and it is cheap:
+
+* `--w-relay` shipped with its `TrainConfig` field, its `build_weights` wiring
+  and its call site — and **no `add_argument`**. It failed on a GPU box as
+  `unrecognized arguments`, one command into a 5-seed sweep.
+* `w_approach` / `w_observe` / `w_link` were *documented as free* while being
+  reachable from nowhere: no `build_weights` branch and no flag. A whole session
+  recommended tuning them.
+
+⚠️ `PHI_V2` adds `n_cover_samples`, an `int` rather than a `float`, which the
+predecessor's flag loop would not have covered. Derive the list; do not hand-list
+it.
+
 ⚠️ Add a probe with a known optimum that *spans the episode* before trusting the
 loop. 📏 The predecessor's probe used a pure per-step action cost, which has
 almost no cross-episode structure — it cleared the plumbing while bug 2 above was
