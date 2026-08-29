@@ -10,6 +10,18 @@ re-introduce them.
 The cost of that choice is that some carried-over code is **known dead or known
 wrong for this project** and has to be removed. This file is the list, in order.
 
+> ⚠️ **Task 5 comes first, and the numbering below is not the running order.**
+> Tasks are numbered by subject, not by sequence. Every gate in `../PLAN.md` needs a
+> trainer and **this repository has none** — `train.py` was deliberately left
+> behind. So the real order is:
+>
+> 1. **Task 5** — build the trainer, and validate it by reproducing the inherited
+>    **40.7 %** at 5 seeds on the train split with the env *unchanged*. A new
+>    trainer that cannot reproduce a known number has an unknown bug in it.
+> 2. **Task 1** — the velocity action space. The env change is unit-testable
+>    without a trainer; **Gate A is not**.
+> 3. Tasks 2–4, then 6, then 7.
+
 > 🔒 **The seeding commit is green — 333 passed, 4 skipped.** That is the point of
 > it. Do each task below as its own commit, re-run the suite, and keep the
 > history bisectable. A reduction you cannot verify against a working baseline is
