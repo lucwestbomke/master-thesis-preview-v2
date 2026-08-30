@@ -134,6 +134,14 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--initial-log-std", type=float, default=-0.5)
     ap.add_argument("--no-shuffle", action="store_true", help="reproduce skrl's minibatch order")
     ap.add_argument("--no-value-norm", action="store_true")
+    ap.add_argument(
+        "--value-clip",
+        type=float,
+        default=0.2,
+        help="0 disables value clipping entirely. ☠️ A saturated value clip is "
+        "what froze the critic on seed 0 (grad_norm_critic -> 0.000 at progress "
+        "0.20, mission_capable 50.6 %% -> 2.6 %%); 0 is the arm that cannot do that",
+    )
     ap.add_argument("--phi-v2", action="store_true", help="start from PHI_V2 instead of shipped")
     ap.add_argument(
         "--battery-variance",
@@ -229,6 +237,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         mini_batches=mini_batches,
         learning_rate=a.lr,
         entropy_loss_scale=a.entropy,
+        value_clip=a.value_clip,
         shuffle_minibatches=not a.no_shuffle,
         normalise_values=not a.no_value_norm,
     )
@@ -267,6 +276,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "min_log_std": a.min_std,
         "entropy_loss_scale": a.entropy,
         "shuffle_minibatches": not a.no_shuffle,
+        "value_clip": a.value_clip,
         "actor_params": parameter_count(actor),
         "critic_params": parameter_count(critic),
         "weights": dataclasses.asdict(weights),

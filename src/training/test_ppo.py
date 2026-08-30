@@ -12,7 +12,7 @@ import torch
 
 from ..models import SwarmActor, SwarmCritic
 from . import ppo as ppo_module
-from .ppo import PPOConfig, PPOTrainer, RunningScalar, compute_gae
+from .ppo import PPOConfig, PPOTrainer, RunningScalar, _grad_norm, compute_gae
 from .probe import HORIZON, PAID_FROM, BeaconEnv, ProbeConfig, probe_diagnostics
 
 # --------------------------------------------------------------------------- #
@@ -331,3 +331,71 @@ def test_the_probe_would_have_caught_the_gae_boundary_bug():
     assert broken[-1] < 0.7 * max(broken), (
         f"expected the historical signature -- improve, then degrade -- got {broken}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# The value clip -- the trap that cost a collapsed seed in five
+# --------------------------------------------------------------------------- #
+
+
+def test_the_value_clip_reference_equals_the_prediction_before_any_gradient_step():
+    """☠️ The regression this file exists for most.
+
+    A value clip is only safe while its reference is *the critic's own current
+    output*. At epoch 0, before any optimizer step, `predicted` must equal the
+    stored `values` exactly -- then the clip cannot be saturated and the value
+    loss always has gradient. Once the reference drifts, a clip saturates on
+    every row and the critic's gradient can go **structurally zero**, and it
+    cannot recover because it is clipped against a value it cannot move toward.
+
+    📏 Measured on CUDA, seed 0: `grad_norm_critic` 0.195 -> 0.005 -> **0.000**
+    at progress 0.20, one boundary past the curriculum's 0.15, and zero for the
+    remaining 80 % of the run. `mission_capable` decayed 50.6 % -> 2.6 % and the
+    swarm spent 90 % of steps against the map boundary.
+
+    ⚠️ The `max` form does NOT by itself guarantee a gradient -- if the clipped
+    loss is the larger of the two it is selected and it is constant in
+    `predicted`. It bounds the damage; **the reference being correct is the
+    actual fix.** That is what this test pins.
+    """
+    env = BeaconEnv(ProbeConfig(num_envs=8, num_drones=2))
+    critic = SwarmCritic(env.state_dim, hidden=16)
+    trainer = PPOTrainer(
+        env, SwarmActor(architecture="mlp"), critic, PPOConfig(rollouts=2, value_clip=0.2)
+    )
+    trainer.collect()
+
+    # Whatever the scaler has done in between, the stored reference must still be
+    # what the critic outputs right now.
+    states = trainer.buf["state"].reshape(-1, trainer.buf["state"].shape[-1])
+    with torch.no_grad():
+        predicted = critic(states).squeeze(-1)
+    stored = trainer.buf["value_norm"].reshape(-1)
+    assert torch.allclose(predicted, stored, atol=1e-5), (
+        "the value-clip reference is not the critic's own output -- the clip can "
+        "saturate on every row and kill the critic's gradient permanently"
+    )
+
+    # And with a correct reference the value loss does produce gradient.
+    trainer.update(torch.zeros(trainer.rows, device=trainer.device))
+    assert float(_grad_norm(critic.parameters())) > 0.0
+
+
+def test_the_stored_value_reference_is_the_critics_own_output_not_a_round_trip():
+    """🔒 `normalise_new(denormalise_old(x)) != x` once the scaler's statistics
+    have moved, and they move most at a curriculum boundary. Feeding that stale
+    reference to the value clip is what set the trap above."""
+    env = BeaconEnv(ProbeConfig(num_envs=8, num_drones=2))
+    critic = SwarmCritic(env.state_dim, hidden=16)
+    trainer = PPOTrainer(env, SwarmActor(architecture="mlp"), critic, PPOConfig(rollouts=2))
+
+    _flat, state = trainer._flatten(env.reset())
+    raw, normalised = trainer._values_both(state)
+    with torch.no_grad():
+        assert torch.allclose(normalised, critic(state).squeeze(-1), atol=1e-6)
+
+    # Move the scaler, exactly as a curriculum boundary does, and the raw value
+    # no longer round-trips -- while the network's own output is unaffected.
+    trainer.scaler.update(torch.full((4096,), 300.0))
+    trainer.scaler.update(torch.full((4096,), -50.0))
+    assert not torch.allclose(trainer.scaler.normalise(raw), normalised, atol=1e-3)

@@ -309,6 +309,7 @@ class PPOTrainer:
             "action": torch.zeros(t, rows, actor.head.out_features, device=self.device),
             "log_prob": torch.zeros(t, rows, device=self.device),
             "value": torch.zeros(t, rows, device=self.device),
+            "value_norm": torch.zeros(t, rows, device=self.device),
             "reward": torch.zeros(t, rows, device=self.device),
             "terminated": torch.zeros(t, rows, dtype=torch.bool, device=self.device),
             "truncated": torch.zeros(t, rows, dtype=torch.bool, device=self.device),
@@ -354,8 +355,28 @@ class PPOTrainer:
     @torch.no_grad()
     def _values(self, state: Tensor) -> Tensor:
         """Critic value in **raw return units**, whatever the normaliser holds."""
-        v = self.critic(state).squeeze(-1)
-        return self.scaler.denormalise(v) if self.scaler is not None else v
+        return self._values_both(state)[0]
+
+    @torch.no_grad()
+    def _values_both(self, state: Tensor) -> tuple[Tensor, Tensor]:
+        """`(raw, normalised)`. GAE needs raw; the value clip needs normalised.
+
+        ☠️ **Returning only the raw value and re-normalising it later is a bug,
+        and it cost a collapsed seed in five.** The scaler's statistics move
+        between collection and the update, so
+        `normalise_new(denormalise_old(x)) != x` -- and the gap is largest
+        exactly at a curriculum boundary, where the return distribution shifts.
+        Feed that stale reference to a `clamp`-based value clip and the critic's
+        gradient can go **structurally zero**, permanently. 📏 Measured: `g_crit`
+        0.195 -> 0.005 -> 0.000 at progress 0.20, one boundary after the
+        curriculum's 0.15, and zero for the remaining 80 % of the run.
+
+        Keeping the network's own output removes the round trip entirely.
+        """
+        out = self.critic(state).squeeze(-1)
+        if self.scaler is None:
+            return out, out
+        return self.scaler.denormalise(out), out
 
     # -- collection ------------------------------------------------------- #
 
@@ -369,7 +390,7 @@ class PPOTrainer:
 
             flat, state = self._flatten(self.obs)
             action, log_prob, _ = self.actor.act(flat)
-            value = self._values(state)
+            value, value_norm = self._values_both(state)
 
             obs, reward, terminated, truncated, extras = self.env.step(action.view(b, n, -1))
 
@@ -389,6 +410,7 @@ class PPOTrainer:
             self.buf["action"][t] = action
             self.buf["log_prob"][t] = log_prob
             self.buf["value"][t] = value
+            self.buf["value_norm"][t] = value_norm
             self.buf["reward"][t] = rew
             self.buf["terminated"][t] = term
             self.buf["truncated"][t] = trunc
@@ -428,8 +450,10 @@ class PPOTrainer:
             # reason. The difference is small and it is recorded here rather
             # than left to be rediscovered as a discrepancy.
             self.scaler.update(returns)
-            values = self.scaler.normalise(values)
             returns = self.scaler.normalise(returns)
+            # 🔒 The critic's OWN output, not a re-normalised raw value. See
+            # `_values_both` for the seed this cost.
+            values = self.buf["value_norm"]
 
         def flat(x: Tensor) -> Tensor:
             return x.reshape(-1, *x.shape[2:])
@@ -468,11 +492,27 @@ class PPOTrainer:
                 policy_loss = -torch.min(surrogate, clipped).mean()
 
                 predicted = self.critic(state[idx]).squeeze(-1)
+                squared = (predicted - returns[idx]).pow(2)
                 if cfg.value_clip > 0:
-                    predicted = values[idx] + (predicted - values[idx]).clamp(
+                    # ☠️ **The max form, not a bare `clamp`.** A `clamp` has
+                    # EXACTLY zero gradient outside its range, so once the
+                    # critic drifts more than `value_clip` from the stored
+                    # reference on every row of a minibatch, the value loss
+                    # stops producing gradient and the critic can never move
+                    # back -- it is clipped against a value it cannot update
+                    # toward. That is a trap, and it is self-reinforcing.
+                    # Schulman's PPO2 form takes the LARGER of the clipped and
+                    # unclipped losses. ⚠️ It does NOT by itself guarantee a
+                    # gradient -- when the clipped loss is the larger it is
+                    # selected, and it is constant in `predicted`. It bounds the
+                    # damage; **the actual fix is that `values` is now the
+                    # critic's own output** (`_values_both`), so at epoch 0 the
+                    # clip cannot be saturated at all.
+                    clipped = values[idx] + (predicted - values[idx]).clamp(
                         -cfg.value_clip, cfg.value_clip
                     )
-                value_loss = cfg.value_loss_scale * (predicted - returns[idx]).pow(2).mean()
+                    squared = torch.max(squared, (clipped - returns[idx]).pow(2))
+                value_loss = cfg.value_loss_scale * squared.mean()
 
                 entropy_loss = -cfg.entropy_loss_scale * entropy.mean()
                 loss = policy_loss + value_loss + entropy_loss
