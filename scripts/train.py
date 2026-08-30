@@ -96,6 +96,17 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--timesteps", type=int, default=12_000_000)
     ap.add_argument("--num-drones", type=int, default=5)
     ap.add_argument("--seeds", nargs="+", type=int, default=[0])
+    ap.add_argument(
+        "--init-seed",
+        type=int,
+        default=None,
+        help="seed the MODEL INITIALISATION and the minibatch permutation separately "
+        "from the environment's episode stream. 📏 Needed because seed 0 collapsed on "
+        "BOTH mps and cuda, and `torch.manual_seed` runs on CPU before `.to(device)` "
+        "-- so init and the permutation are device-independent while the episode "
+        "stream is not. Splitting them is what attributes the collapse to one or the "
+        "other. Default: the same value as --seeds",
+    )
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
     ap.add_argument(
@@ -202,7 +213,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         weights=weights,
     )
 
-    torch.manual_seed(seed)
+    init_seed = seed if a.init_seed is None else a.init_seed
+    torch.manual_seed(init_seed)
     actor = SwarmActor(
         architecture=a.arch,
         hidden=a.hidden,
@@ -227,17 +239,18 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         ppo,
         total_timesteps=a.timesteps,
         curriculum=None if a.no_curriculum else CurriculumSchedule(),
-        seed=seed,
+        seed=init_seed,
         diagnostics=mission_diagnostics,
     )
 
     tag = a.tag or f"{a.fidelity}-{a.arch}-{a.cadence}"
-    out = a.out_root / f"{tag}-s{seed}"
+    out = a.out_root / (f"{tag}-s{seed}" if a.init_seed is None else f"{tag}-s{seed}i{init_seed}")
     out.mkdir(parents=True, exist_ok=True)
     log_path = out / "log.jsonl"
 
     provenance = {
         "seed": seed,
+        "init_seed": init_seed,
         "device": str(a.device),
         "architecture": a.arch,
         "cadence": a.cadence,
