@@ -21,7 +21,7 @@ Everything is batched, pure torch, device-agnostic, free of .item()/.cpu().
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from itertools import pairwise
 
 import torch
@@ -160,6 +160,44 @@ class RewardWeights:
 
 
 DEFAULT_WEIGHTS = RewardWeights()
+
+#: The five weights that define the mission. ⛔ Changing one changes what is
+#: OPTIMAL, so they are pinned by the behavioural orderings in
+#: `weight_constraints_satisfied()` and are not sweepable. `battery_variance`
+#: (lambda) is the single exception the design permits.
+OBJECTIVE_WEIGHTS = frozenset({"mission", "idle", "energy", "battery_variance", "effort"})
+
+#: Physical constants used for normalisation. Not a tuning knob either.
+PHYSICAL_REFERENCES = frozenset({"max_accel_ms2"})
+
+
+def pbrs_safe_fields() -> tuple[str, ...]:
+    """Every `RewardWeights` field that lives inside `Phi`.
+
+    🔒 Derived from the dataclass, never hand-listed. Everything that is not an
+    objective weight and not a physical reference is inside the potential, is
+    optimum-preserving by the PBRS proof (Ng, Harada & Russell 1999; Devlin &
+    Kudenko 2011 for the multi-agent case), and must therefore be settable from
+    the command line -- **because a knob that cannot be set cannot be swept.**
+
+    📏 Two real misses of exactly that shape, both recorded in
+    `docs/REDUCTION.md`: `--w-relay` shipped with its config field, its wiring
+    and its call site and **no `add_argument`**, failing on a GPU box as
+    `unrecognized arguments` one command into a 5-seed sweep; and
+    `w_approach` / `w_observe` / `w_link` were documented as free while being
+    reachable from nowhere.
+
+    ⚠️ A new field added to `RewardWeights` lands here **by default**, which is
+    the safe direction: it demands a flag rather than silently becoming
+    unreachable. `n_cover_samples` is an `int` where every other knob is a
+    `float`, which is exactly the case a hand-listed flag loop missed.
+    """
+    return tuple(
+        f.name
+        for f in fields(RewardWeights)
+        if f.name not in OBJECTIVE_WEIGHTS and f.name not in PHYSICAL_REFERENCES
+    )
+
 
 #: `Phi` v2 -- the whole rebuild as ONE flag, so the experiment has one variable.
 #:

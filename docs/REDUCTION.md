@@ -116,7 +116,14 @@ orderings in `weight_constraints_satisfied()` are what pin the rest.
 
 ---
 
-## 4. Remove recurrence
+## 4. Remove recurrence — ✅ **DONE 2026-08-30**, with task 5
+
+> ✅ `recurrence.py`, `test_recurrence.py`, `SwarmActorRNN`, `SwarmCriticRNN` and
+> both `blob["recurrent"]` branches are gone. `eval_policy.py` and
+> `viz/episode.py` now **refuse** a recurrent checkpoint rather than silently
+> loading it as a feedforward policy, which would score a different network.
+> Done here because task 5 rewrote both model files anyway and carrying the GRU
+> through that rewrite would have been work spent on something already killed.
 
 **Where:** `src/models/recurrence.py`, `src/models/test_recurrence.py`,
 `SwarmActorRNN` in `actor.py`, `SwarmCriticRNN` in `critic.py`, and the
@@ -134,7 +141,22 @@ seeding commit had to be green.
 
 ---
 
-## 5. Replace skrl with an own PPO / MAPPO
+## 5. Replace skrl with an own PPO / MAPPO — ✅ **DONE 2026-08-30**
+
+> ✅ `src/training/ppo.py` (~380 lines), `src/training/probe.py`,
+> `scripts/train.py`, `src/training/test_ppo.py`,
+> `src/training/test_train_cli.py`. skrl is out of `pyproject.toml` and out of
+> the venv; `test_actor.py` asserts no framework base class can creep back.
+> The validation gate was declared before the runs and the result is in
+> [`../results/trainer_validation.md`](../results/trainer_validation.md).
+>
+> 📏 The probe **demonstrably catches** bug 2 below: under the stale
+> `terminated`-only mask it reaches 12.0 against a known optimum of 33.0, and
+> degrades over training exactly as the predecessor's runs did. ⚠️ It does *not*
+> catch a missing truncation bootstrap on its own — with no bootstrap there is no
+> doubled continuation term for the leak to double-count, so **the two bugs
+> cancel** and the probe looks healthy while two things are wrong. That is why
+> the bootstrap has its own unit tests rather than relying on the probe.
 
 **Where:** the `skrl` dependency in `pyproject.toml`; `src/models/actor.py` and
 `critic.py`, which inherit from `GaussianMixin` / `DeterministicMixin` / `Model`.

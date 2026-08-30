@@ -57,15 +57,27 @@ Three contributions, each able to fail on its own — [`PLAN.md`](PLAN.md):
 | `src/env/core.py` | the batched env, leading `num_envs` dimension. THE training path | ⚠️ inherited, **to reduce** |
 | `src/baselines/b0.py` | the scripted baseline — the comparison everything is measured against | ✅ inherited |
 | `src/baselines/evaluate.py` | **the one rollout harness.** Every number goes through it | ✅ inherited |
-| `src/models/` | MLP / DeepSets / GNN actors, one shared critic | ⚠️ inherited, **skrl-coupled** |
+| `src/models/` | MLP / DeepSets / GNN actors, one shared critic. Plain `nn.Module`s | ✅ de-skrl'd |
+| `src/training/ppo.py` | **the trainer.** One-file MAPPO: shared actor, centralized critic | ✅ own, validated |
+| `src/training/probe.py` | known-optimum probe whose optimum **spans the episode** | ✅ own |
+| `scripts/train.py` | the only entry point into the trainer. Φ flags are derived | ✅ own |
 | `src/training/curriculum.py` | fixed step-count schedule, a pure function of training progress | ✅ inherited |
 | `src/viz/` | scene drawing, episode figures and videos | ✅ inherited |
 | `scripts/` | offline data prep, measurement, evaluation | ✅ inherited |
 | `docs/inherited/` | predecessor documentation, **read-only history** | 📚 |
 
-⛔ **There is no trainer yet.** `src/training/train.py` was deliberately not
-carried over — it is being replaced together with skrl. See
-[`docs/REDUCTION.md`](docs/REDUCTION.md) task 5.
+✅ **The trainer landed 2026-08-30** — `docs/REDUCTION.md` task 5. skrl is gone
+from `pyproject.toml`; `src/training/ppo.py` replaces it in ~380 lines with no
+framework. Validated against the inherited number before anything was changed —
+[`results/trainer_validation.md`](results/trainer_validation.md) carries the gate,
+declared before the runs, and the result.
+
+⚠️ Three things in it are 🔒 and each failed **silently** before: the GAE mask is
+`terminated | truncated`, the truncation bootstrap reads `extras["final_state"]`
+(not what `step()` returns), and the swarm is **one** parameter-shared agent over
+`num_envs * N` rows. 📏 `src/training/probe.py` demonstrably catches the first —
+32.7 → 12.0 against a known optimum of 33.0 — which the predecessor's per-step
+probe did not.
 
 ---
 
@@ -169,7 +181,10 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
   One human reading of the UMi-AV table closes it. **Everything downstream rests
   on this.**
 - ⛔ 🔒 **Add heavy dependencies** (sim engines, RL frameworks) without flagging.
-  📏 The one already here has produced four silent bugs — see `docs/REDUCTION.md`.
+  📏 The one that was here produced four silent bugs and has been **removed**;
+  `src/training/ppo.py` is the replacement. Adding skrl, RLlib or
+  stable-baselines3 back is re-acquiring all four — see `docs/REDUCTION.md`
+  task 5.
 
 ---
 
@@ -178,7 +193,7 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
 ```bash
 uv sync --extra dev                # `dev` is an EXTRA -- plain `uv sync` gives
                                    # you neither pytest nor ruff
-uv run pytest                      # 333 passed (+ 7 CUDA-gated, 4 skip on arm64)
+uv run pytest                      # 344 passed (+ 7 CUDA-gated, 4 skip on arm64)
 uv run ruff check . && uv run ruff format .
 ```
 

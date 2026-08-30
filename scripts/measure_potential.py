@@ -127,12 +127,11 @@ def bank_states(
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from eval_policy import load_actor
 
-        actor, blob = load_actor(checkpoint, env)
-        if blob.get("recurrent"):
-            raise SystemExit("recurrent checkpoints are not banked: state handling differs")
+        actor, _blob = load_actor(checkpoint, env)
 
+        @torch.no_grad()
         def act(o):
-            mean, _ = actor.compute({"observations": o["flat"].reshape(b * n, -1)})
+            mean, _ = actor(o["flat"].reshape(b * n, -1))
             return mean.view(b, n, 3)
 
     cols: dict[str, list[Tensor]] = {

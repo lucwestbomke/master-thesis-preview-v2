@@ -132,36 +132,25 @@ def make_env(a, seed: int, num_drones: int) -> BatchedSwarmEnv:
 
 
 def load_actor(path: Path, env: BatchedSwarmEnv) -> tuple[SwarmActor, dict]:
+    """Rebuild the actor a checkpoint describes.
+
+    ⛔ The `blob["recurrent"]` branch is gone with `docs/REDUCTION.md` task 4:
+    recurrence was killed on its own pre-declared rule (−1.05 pp, tenure 36.8
+    against a required 95, seed IQR *widened* 4.7 → 6.9). A checkpoint carrying
+    that key is a predecessor artefact and is refused rather than silently
+    loaded as a feedforward policy, which would score a different network.
+    """
     blob = torch.load(path, map_location=env.device, weights_only=False)
-    import gymnasium
-    import numpy as np
-
-    from src.env.core import ACTION_DIM, FLAT_DIM
-
-    obs_space = gymnasium.spaces.Box(-np.inf, np.inf, shape=(FLAT_DIM,), dtype=np.float32)
-    act_space = gymnasium.spaces.Box(-1.0, 1.0, shape=(ACTION_DIM,), dtype=np.float32)
-    rows = env.cfg.num_envs * env.cfg.num_drones
     if blob.get("recurrent"):
-        from src.models import SwarmActorRNN
-
-        actor = SwarmActorRNN(
-            obs_space,
-            act_space,
-            env.device,
-            architecture=blob["architecture"],
-            hidden=blob.get("hidden"),
-            num_envs=rows,
-            rnn_hidden=blob.get("rnn_hidden", 128),
-            sequence_length=blob.get("sequence_length", 16),
-        ).to(env.device)
-    else:
-        actor = SwarmActor(
-            obs_space,
-            act_space,
-            env.device,
-            architecture=blob["architecture"],
-            hidden=blob.get("hidden"),
-        ).to(env.device)
+        raise SystemExit(
+            f"{path} is a recurrent checkpoint; recurrence was removed in "
+            "docs/REDUCTION.md task 4 and there is nothing here that can load it"
+        )
+    actor = SwarmActor(
+        architecture=blob["architecture"],
+        hidden=blob.get("hidden"),
+        min_log_std=blob.get("min_log_std", -20.0),
+    ).to(env.device)
     actor.load_state_dict(blob["policy"])
     actor.eval()
     return actor, blob
@@ -190,29 +179,14 @@ def score(a, name: str, checkpoint: Path | None, num_drones: int) -> dict[str, l
                 return _pol.act(obs["flat"])
 
         else:
-            actor, blob = load_actor(checkpoint, env)
-            # A recurrent actor carries hidden state across the episode, which is
-            # the whole point of it -- so the evaluator has to carry it too. The
-            # rollout is one episode per environment (auto_reset off), so a single
-            # zeroed state at the start is the correct initialisation.
-            state = (
-                [torch.zeros(actor.rnn_layers, b * n, actor.rnn_hidden, device=env.device)]
-                if blob.get("recurrent")
-                else None
-            )
+            actor, _blob = load_actor(checkpoint, env)
 
             @torch.no_grad()
-            def policy(obs, _actor=actor, _b=b, _n=n, _h=state):
+            def policy(obs, _actor=actor, _b=b, _n=n):
                 # The deterministic action: the Gaussian's mean, not a sample.
                 # Evaluating a stochastic policy by sampling would report the
                 # exploration noise as part of the result.
-                flat = obs["flat"].reshape(_b * _n, -1)
-                inputs = {"observations": flat}
-                if _h is not None:
-                    inputs["rnn"] = _h
-                mean, extra = _actor.compute(inputs)
-                if _h is not None:
-                    _h[0] = extra["rnn"][0]
+                mean, _ = _actor(obs["flat"].reshape(_b * _n, -1))
                 return mean.view(_b, _n, 3)
 
         metrics: RolloutMetrics = rollout(env, policy, steps, on_reset=on_reset)

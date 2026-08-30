@@ -8,17 +8,12 @@ off-`N` at all.
 
 from __future__ import annotations
 
-import gymnasium
-import numpy as np
 import pytest
 import torch
 
 from ..env.core import ACTION_DIM, EDGE_DIM, EGO_DIM, FLAT_DIM, N_MAX, NEIGHBOUR_DIM
 from .actor import ARCHITECTURES, RelationalTrunk, SwarmActor, build_trunk, parameter_count
 from .critic import SwarmCritic
-
-OBS_SPACE = gymnasium.spaces.Box(-np.inf, np.inf, shape=(FLAT_DIM,), dtype=np.float32)
-ACT_SPACE = gymnasium.spaces.Box(-1.0, 1.0, shape=(ACTION_DIM,), dtype=np.float32)
 
 
 def flat_batch(rows: int = 16, num_drones: int = 5, seed: int = 0) -> torch.Tensor:
@@ -54,12 +49,12 @@ def permute_neighbours(flat: torch.Tensor, order: list[int]) -> torch.Tensor:
 def test_every_architecture_accepts_every_swarm_size(architecture):
     """RQ2 trains at N=5 and evaluates zero-shot at N in {3,5,8}. A rung that
     cannot take the off-N observation cannot be in the comparison at all."""
-    actor = SwarmActor(OBS_SPACE, ACT_SPACE, "cpu", architecture=architecture)
+    actor = SwarmActor(architecture=architecture)
     for n in (3, 5, 8):
-        mean, outputs = actor.compute({"observations": flat_batch(num_drones=n)})
+        mean, log_std = actor(flat_batch(num_drones=n))
         assert mean.shape == (16, ACTION_DIM)
         assert torch.isfinite(mean).all()
-        assert outputs["log_std"].shape == (ACTION_DIM,)
+        assert log_std.shape == (ACTION_DIM,)
 
 
 def test_parameter_counts_are_within_twenty_percent():
@@ -124,130 +119,84 @@ def test_padded_neighbour_slots_do_not_reach_the_pooling():
 def test_the_actor_never_reads_the_critic_state():
     """CTDE is a claim this project makes, and a wrapper that quietly handed the
     actor the global state would invalidate it silently."""
-    actor = SwarmActor(OBS_SPACE, ACT_SPACE, "cpu")
-    mean, _ = actor.compute({"observations": flat_batch(), "states": torch.randn(16, 54)})
-    other, _ = actor.compute({"observations": flat_batch(), "states": torch.randn(16, 54) * 9})
-    assert torch.equal(mean, other)
+    import inspect
+
+    actor = SwarmActor()
+    # Structural, not behavioural: `forward` takes ONE tensor and it is the
+    # agent-local observation. There is no argument a global state could enter
+    # through, so centralized execution is not reachable by accident.
+    assert list(inspect.signature(SwarmActor.forward).parameters) == ["self", "flat"]
+    mean, _ = actor(flat_batch())
+    again, _ = actor(flat_batch())
+    assert torch.equal(mean, again)
 
 
 def test_actions_are_not_clipped_inside_the_distribution():
     """⚠️ Regression pin, and the failure it guards is silent and severe.
 
-    skrl's `clip_actions=True` clamps the sample to the action space and then
-    evaluates its log-probability under the *unclamped* Normal, so every tail
-    draw is recorded as if it landed exactly on the boundary. Measured on this
+    skrl's `clip_actions=True` clamped the sample to the action space and then
+    evaluated its log-probability under the *unclamped* Normal, so every tail
+    draw was recorded as if it landed exactly on the boundary. Measured on this
     task: the action standard deviation rises monotonically with no entropy
     bonus anywhere in the config, actions saturate at the corners, and
     mission-capable falls from ~30 % to ~5 % under a reward whose only term is
     mission-capable. `core._advance_drones` clamps actions itself, so the bound
     is enforced either way and only the density changes.
     """
-    actor = SwarmActor(OBS_SPACE, ACT_SPACE, "cpu")
-    assert actor._g_clip_actions is False
+    torch.manual_seed(0)
+    actor = SwarmActor()
+    flat = flat_batch(rows=4096, seed=1)
 
-    # and the recorded log-probability must be the one of the action returned
-    actions, outputs = actor.act({"observations": flat_batch(rows=4096, seed=1)})
-    replayed = actor.act({"observations": flat_batch(rows=4096, seed=1), "taken_actions": actions})
-    assert torch.allclose(outputs["log_prob"], replayed[1]["log_prob"], atol=1e-5)
+    actions, log_prob, _ = actor.act(flat)
     assert (actions.abs() > 1.0).any(), "an unclipped Gaussian must leave the box sometimes"
+
+    # The recorded log-probability must be the one of the action returned, or
+    # the PPO ratio is computed against a density the sample did not come from.
+    replayed, _ = actor.evaluate(flat, actions)
+    assert torch.allclose(log_prob, replayed, atol=1e-5)
+
+
+def test_the_log_std_floor_bounds_the_policy_class():
+    """📏 With `entropy_loss_scale = 0` the deviation shrinks monotonically --
+    0.061 by 20 M steps, at which point the policy is deterministic and has
+    stopped exploring. The floor bounds the policy CLASS instead of adding a
+    term to the objective, which is why it is preferred to an entropy bonus
+    (0.01 drove the deviation UP, to 1.11)."""
+    actor = SwarmActor(initial_log_std=-9.0, min_log_std=-1.0)
+    _, log_std = actor(flat_batch(rows=4))
+    assert torch.allclose(log_std, torch.full((ACTION_DIM,), -1.0))
+    with torch.no_grad():
+        stddev = float(actor.distribution(flat_batch(rows=4)).stddev.min())
+    assert stddev == pytest.approx(float(torch.tensor(-1.0).exp()))
+
+
+def test_the_mean_is_bounded_but_the_sample_is_not():
+    """The mean is `tanh`-bounded so the deterministic policy the evaluator runs
+    is always inside the action box; the sample is not, so the density is
+    honest. Both properties are load-bearing and they are not the same one."""
+    actor = SwarmActor(initial_log_std=1.0)
+    mean, _ = actor(flat_batch(rows=512, seed=3))
+    assert (mean.abs() <= 1.0).all()
+    actions, _, returned_mean = actor.act(flat_batch(rows=512, seed=3))
+    assert torch.equal(mean, returned_mean)
+    assert (actions.abs() > 1.0).any()
 
 
 def test_the_critic_is_one_design_with_no_architecture_argument():
-    """docs/MODELS.md: if both the actor and the critic vary, RQ2 is confounded."""
+    """docs/inherited/MODELS.md: if both the actor and the critic vary, RQ2 is
+    confounded."""
     import inspect
 
     assert "architecture" not in inspect.signature(SwarmCritic.__init__).parameters
-    state_space = gymnasium.spaces.Box(-np.inf, np.inf, shape=(54,), dtype=np.float32)
-    critic = SwarmCritic(state_space, ACT_SPACE, "cpu")
-    value, _ = critic.compute({"states": torch.randn(16, 54)})
-    assert value.shape == (16, 1)
+    critic = SwarmCritic(state_dim=54)
+    assert critic(torch.randn(16, 54)).shape == (16, 1)
 
 
-# --------------------------------------------------------------------------- #
-# The recurrent variant
-# --------------------------------------------------------------------------- #
-
-
-def make_rnn(architecture: str = "mlp", num_envs: int = 4, sequence_length: int = 4):
-    from .actor import SwarmActorRNN
-
-    return SwarmActorRNN(
-        OBS_SPACE,
-        ACT_SPACE,
-        "cpu",
-        architecture=architecture,
-        num_envs=num_envs,
-        sequence_length=sequence_length,
-    )
-
-
-@pytest.mark.parametrize("architecture", ARCHITECTURES)
-def test_the_gru_is_identical_in_every_rung(architecture):
-    """RQ2 must still isolate the trunk. If memory differed between rungs the
-    comparison would be memory-vs-architecture."""
-    model = make_rnn(architecture)
-    assert model.gru.input_size == model.trunk.out_dim
-    assert model.gru.hidden_size == model.rnn_hidden
-    spec = model.get_specification()["rnn"]
-    assert spec["sizes"] == [(model.rnn_layers, 4, model.rnn_hidden)]
-    counts = {a: parameter_count(make_rnn(a)) for a in ARCHITECTURES}
-    assert max(counts.values()) / min(counts.values()) <= 1.2, counts
-
-
-def test_the_hidden_state_actually_changes_the_action():
-    """A GRU wired in but ignored would look exactly like a working one on every
-    shape test, and would quietly reproduce the memoryless failure it was added
-    to fix."""
-    model = make_rnn("gnn").eval()
-    obs = flat_batch(rows=4)
-    zero = [torch.zeros(model.rnn_layers, 4, model.rnn_hidden)]
-    other = [torch.randn(model.rnn_layers, 4, model.rnn_hidden)]
-
-    a, out_a = model.compute({"observations": obs, "rnn": zero})
-    b, _ = model.compute({"observations": obs, "rnn": other})
-    assert not torch.allclose(a, b, atol=1e-5), "the action ignores the hidden state"
-    assert not torch.allclose(out_a["rnn"][0], zero[0]), "the hidden state never advances"
-
-
-def test_memory_does_not_leak_across_an_episode_boundary():
-    """The one correctness rule of a recurrent policy on truncated episodes: a
-    new episode must not condition on the previous episode's target."""
-    model = make_rnn("mlp", num_envs=2, sequence_length=4).train()
-    obs = flat_batch(rows=8)  # 2 sequences x 4 steps
-    hidden = [torch.randn(model.rnn_layers, 8, model.rnn_hidden)]
-
-    done = torch.zeros(8, 1, dtype=torch.bool)
-    done[1] = True  # episode ends inside the first sequence, at step 1
-    no_done = torch.zeros(8, 1, dtype=torch.bool)
-
-    _, ended = model.compute(
-        {"observations": obs, "rnn": hidden, "terminated": done, "truncated": no_done}
-    )
-    _, intact = model.compute(
-        {"observations": obs, "rnn": hidden, "terminated": no_done, "truncated": no_done}
-    )
-    assert not torch.allclose(ended["rnn"][0], intact["rnn"][0], atol=1e-6), (
-        "the carried state is identical whether or not an episode ended -- the reset is not firing"
-    )
-
-
-def test_training_and_collection_shapes_agree():
-    """Collection steps one transition at a time; the update replays sequences.
-    Both must produce one action per row or the ratio is computed against the
-    wrong actions."""
-    model = make_rnn("deepsets", num_envs=3, sequence_length=5)
-    model.eval()
-    act, _ = model.compute({"observations": flat_batch(rows=3), "rnn": [torch.zeros(1, 3, 128)]})
-    assert act.shape == (3, ACTION_DIM)
-
-    model.train()
-    act, extra = model.compute(
-        {
-            "observations": flat_batch(rows=15),  # 3 sequences x 5
-            "rnn": [torch.zeros(1, 15, 128)],
-            "terminated": torch.zeros(15, 1, dtype=torch.bool),
-            "truncated": torch.zeros(15, 1, dtype=torch.bool),
-        }
-    )
-    assert act.shape == (15, ACTION_DIM)
-    assert extra["rnn"][0].shape == (1, 3, 128)
+def test_the_models_are_plain_modules_with_no_framework_base_class():
+    """🔒 `docs/REDUCTION.md` task 5. skrl produced four silent bugs in this
+    project, three of them reachable only through its `Model` / mixin
+    inheritance. A base class creeping back in is how they return."""
+    for cls in (SwarmActor, SwarmCritic):
+        bases = {b.__module__.split(".")[0] for b in cls.__mro__} - {"builtins"}
+        assert bases <= {"torch", "src", "models"}, (cls, bases)
+    assert "skrl" not in {m.split(".")[0] for m in list(__import__("sys").modules)}

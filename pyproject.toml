@@ -6,11 +6,10 @@ requires-python = ">=3.12"
 dependencies = [
     "torch>=2.3",
     "torch-geometric",
-    # ⚠️ Inherited, and scheduled for removal -- see docs/REDUCTION.md task 5.
-    # skrl has produced four silent bugs in this project. The models inherit
-    # from its Model/Mixin classes, so it cannot be dropped until they are
-    # rewritten as plain nn.Modules alongside an own PPO.
-    "skrl",
+    # ⛔ skrl was REMOVED by docs/REDUCTION.md task 5, after four silent bugs.
+    # `src/training/ppo.py` is the replacement: one file, ~350 lines, no
+    # framework. Do not add an RL framework back without flagging it --
+    # AGENTS.md lists heavy dependencies under "never do these".
     "osmnx",
     "shapely",
     "geopandas",
