@@ -153,3 +153,81 @@ gate that was not.
 It is recorded because it is a *hypothesis worth pre-declaring next time*: **the
 relational rung may buy variance reduction rather than mean improvement.** If
 anyone wants that, it needs its own gate, declared before its own run.
+
+## 📏 Stage B — measured 2026-09-01, CUDA, **eval split**, 5 training seeds, N ∈ {3, 5, 8}
+
+Each architecture at its own stage-A cadence. Median [min–max across the 5
+training seeds], scored through `src/baselines/evaluate.py`.
+
+| policy | N = 3 | **N = 5** | **N = 8** |
+|---|---|---|---|
+| mlp / `base` | 14.9 [13.1–17.0] | **30.7** [29.3–31.4] | **18.0** [15.9–33.2] |
+| deepsets / `deep` | 22.3 [20.9–26.8] | **39.8** [36.5–45.8] | **52.5** [52.2–56.7] |
+| gnn / `deep` | 24.1 [23.0–25.8] | **40.7** [36.0–43.9] | **53.8** [46.1–56.9] |
+| **B0** | 35.2 [32.8–35.8] | **55.7** [52.3–61.2] | **76.0** [71.3–76.4] |
+| random | 5.7 [4.9–6.5] | 10.6 [9.6–11.7] | 19.4 [18.7–19.9] |
+
+### The declared contrasts, at N = 5
+
+| contrast | effect | ranges | verdict |
+|---|---|---|---|
+| **MLP → DeepSets** | **+9.1 pp** | [29.3, 31.4] vs [36.5, 45.8] — **disjoint** | ✅ **confirmed** |
+| **DeepSets → GNN** | **+0.9 pp** | overlapping, and below the 2 pp threshold | ⛔ **null** |
+
+🔍 **The inherited RQ2 result is vindicated, not overturned.** Inherited: MLP
+31.2, DeepSets 38.1, GNN 41.2, B0 57.3, random 10.7. Measured now: **30.7, 39.8,
+40.7, 55.7, 10.6** — every column within ~1.5 pp, on a trainer whose critic does
+not freeze. ⚠️ Earlier in this session I wrote that the frozen critic meant the
+ladder "has to be re-run before RQ2 is reported". It did, and the re-run says the
+predecessor's conclusions were right. That is the outcome a re-run is *for*.
+
+⚠️ **The fix moved the train split and not the eval split.** GNN train 41.1 →
+44.5 %, GNN eval 41.2 → 40.7 %. So the ~3.5 pp the critic fix bought is
+**train-split only**, and the 3.8 pp train→eval gap it opens is new. Held-out
+routes through the same buildings are a weak generalisation test to begin with
+(`PLAN.md` §7); this is a reason to take that criticism more seriously, not less.
+
+### 🔍 The column that was never measured — and it is RQ2's real answer
+
+📏 Zero-shot transfer, N = 5 → N = 8, on the **worst** seed as well as the median:
+
+| policy | median | worst seed |
+|---|---|---|
+| **mlp** | 30.7 → **18.0** (**−12.8 pp**) | 29.3 → 15.9 (**−13.5 pp**) |
+| deepsets | 39.8 → 52.5 (**+12.6 pp**) | 36.5 → 52.2 (**+15.7 pp**) |
+| gnn | 40.7 → 53.8 (**+13.1 pp**) | 36.0 → 46.1 (+10.0 pp) |
+| B0 | 55.7 → 76.0 (+20.2 pp) | 52.3 → 71.3 (+19.0 pp) |
+| random | 10.6 → 19.4 (+8.8 pp) | 9.6 → 18.7 (+9.0 pp) |
+
+☠️ **The MLP is the only policy in the table that gets WORSE with more drones**,
+and at N = 8 its median (**18.0 %**) sits **below random's (19.4 %)**. Everything
+else gains — random gains 8.8 pp simply because more drones cover more ground.
+
+The mechanism is structural and was predicted: the MLP's neighbour slots are
+**position-specific weights**, and slots 5–7 are zero-padded at every training
+step. At N = 8 they carry real data the network has never seen non-zero. DeepSets
+and the GNN pool over valid neighbours and cannot have this failure.
+
+🔍 So permutation invariance is not worth "+9.1 pp" — **in-distribution it is
+worth +9.1 pp, and out-of-distribution it is the difference between transferring
+and not transferring at all.** That is a much stronger statement of RQ2's first
+contrast than the N = 5 column supports, and it is the column `BLOCK_G.md`
+flagged as informative and never ran.
+
+**DeepSets → GNN remains null at every swarm size** — +1.8 pp at N = 3, +0.9 at
+N = 5, +1.3 at N = 8, ranges overlapping throughout. ⚠️ On the *worst* seed at
+N = 8, DeepSets is **better** (52.2 against 46.1), driven by one weak GNN seed.
+The relational rung does not earn its keep on this task at any `N` tested.
+
+### ⚠️ B0's advantage grows with the swarm, and that is uncomfortable
+
+| | N = 3 | N = 5 | N = 8 |
+|---|---|---|---|
+| B0 − best learned | **11.1 pp** | **15.0 pp** | **22.2 pp** |
+
+B0 converts extra drones into mission capability better than any learned policy
+does. Since the whole premise is that coordination is what learning should buy,
+a gap that *widens* with the number of agents is a finding that belongs in the
+thesis rather than in a footnote. ⛔ It is also a reason not to read the N = 8
+transfer result as "the learned policies scale well" — they scale, and B0 scales
+better.
