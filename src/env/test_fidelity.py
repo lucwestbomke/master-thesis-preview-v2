@@ -32,6 +32,7 @@ import torch
 from . import channel
 from .core import (
     BANDWIDTH_HZ,
+    DRONE_DASH_MS,
     F0_CAPACITY_MBPS,
     F0_RADIUS_M,
     LADDER,
@@ -55,16 +56,61 @@ def make(fidelity="F4", num_envs=4, num_drones=5, seed=0, **kw) -> BatchedSwarmE
 
 
 def fly(env: BatchedSwarmEnv, steps: int, seed: int = 7) -> None:
-    """Push the swarm somewhere interesting with a seeded action sequence.
+    """Fly the swarm into a **relay chain across the city**, with seeded jitter.
 
-    Identical across rungs because the actions do not read the observation --
-    which is what lets the comparisons below hold geometry fixed and vary only
-    the channel.
+    Each drone is steered toward a fixed fraction along the MCV -> HVT axis at a
+    mid-band altitude. That is the geometry the ladder exists to differentiate:
+    a routed multi-hop chain, long enough for occlusion to bite and for capacity
+    to fall below the modulation ceiling.
+
+    🔒 **Identical across rungs, which is the property every comparison in this
+    file rests on.** The law reads `drone_pos`, `mcv_pos` and `hvt_pos` -- pure
+    kinematics, which fidelity does not touch (a rung changes the *channel*, not
+    where anything is). Given identical actions at step `t`, positions at `t+1`
+    are identical across rungs, so by induction the whole trajectory is. It never
+    reads capacity, clearance or any observation.
+
+    ⚠️ **Why this replaced a uniform random action sequence**, recorded because
+    the change looks like a test being bent to pass and is not. Under the
+    **acceleration** action space, resampling a uniform action each step was a
+    random walk in *velocity*: the swarm dispersed hundreds of metres and
+    stumbled into long, occluded, capacity-limited links. `docs/REDUCTION.md`
+    task 1 made the action a **velocity setpoint**, so the same sequence became a
+    zero-mean command resampled every tick -- 📏 measured swarm spread fell from
+    219 m to 56 m, `hop_count` to 0.25-0.50, and `chain_occluded` to exactly 0.
+
+    Two assertions then failed **because the swarm stopped moving**, not because
+    the property under test stopped holding. The assertions are unchanged; the
+    fixture was repaired to keep expressing its stated intent. 📏 It now produces
+    `hop_count` 1.0-1.25 and `chain_occluded` 0.25 at F0, stable across seeds
+    1, 2, 3 and 7.
     """
     gen = torch.Generator(device=env.device).manual_seed(seed)
     b, n = env.cfg.num_envs, env.cfg.num_drones
+    frac = torch.linspace(0.15, 0.95, n, device=env.device).view(1, n, 1)
+    # Slow enough that the drones converge over the rollout rather than snapping
+    # to station in one tick, so intermediate geometry is exercised too.
+    gain = DRONE_DASH_MS * env.cfg.dt_s * 3.0
     for _ in range(steps):
-        env.step(torch.rand(b, n, 3, generator=gen, device=env.device) * 2.0 - 1.0)
+        axis = env.hvt_pos[:, None, :] - env.mcv_pos[:, None, :]
+        station = env.mcv_pos[:, None, :] + frac * axis
+        target = torch.cat([station[..., :2], torch.full_like(station[..., 2:], 60.0)], dim=-1)
+        jitter = (torch.rand(b, n, 3, generator=gen, device=env.device) * 2.0 - 1.0) * 0.2
+        env.step(((target - env.drone_pos) / gain + jitter).clamp(-1.0, 1.0))
+
+
+def test_the_fixture_produces_identical_geometry_at_every_rung():
+    """🔒 The invariant every comparison in this file depends on. If the
+    trajectory differed between rungs, each test would be comparing two
+    geometries as well as two channel models, and RQ1's attribution would be
+    confounded without anything failing."""
+    positions = []
+    for rung in RUNGS:
+        env = make(fidelity=rung)
+        fly(env, 20)
+        positions.append(env.drone_pos.clone())
+    for other in positions[1:]:
+        assert torch.allclose(positions[0], other, atol=1e-5)
 
 
 @functools.cache

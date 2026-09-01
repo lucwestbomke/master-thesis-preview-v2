@@ -78,6 +78,10 @@ DRONE_DASH_MS = 25.0
 # enforces only the dash ceiling. It lives here so policies and the sizing
 # scripts read one number rather than three copies of it.
 DRONE_CRUISE_MS = 20.0
+#: The airframe's acceleration envelope. 🔒 Since `docs/REDUCTION.md` task 1 this
+#: is **not** the action scale -- the action is a velocity setpoint (see
+#: `_advance_drones`) and this is the rate at which the airframe may close on it.
+#: `MAX_ACCEL_MS2 * DT_S` = 4 m/s of velocity error per tick.
 MAX_ACCEL_MS2 = 10.0
 SENSOR_RANGE_M = 830.0  # non-binding ceiling; 99.8 % of sightlines are shorter
 SPAWN_RING_M = 5.0
@@ -109,7 +113,10 @@ N_EVAL_ROUTES = 256
 EGO_DIM = 24  # 21 from ENVIRONMENT.md + 3 for the persistent cue vector
 NEIGHBOUR_DIM = 9
 EDGE_DIM = 2
-ACTION_DIM = 3  # dv_x, dv_y, dv_z. Ptx is NOT an action -- NEGATIVE_RESULTS.md
+#: `v_x, v_y, v_z` -- a **velocity setpoint** normalised by `DRONE_DASH_MS`, not
+#: an acceleration. ⛔ Ptx is NOT an action and never becomes one: three framings,
+#: three nulls (`docs/inherited/NEGATIVE_RESULTS.md`).
+ACTION_DIM = 3
 N_MAX = 8  # max-N padding, so the MLP rung can be evaluated off-N at all
 FLAT_DIM = EGO_DIM + (N_MAX - 1) * (NEIGHBOUR_DIM + EDGE_DIM + 1)  # 24 + 77 = 108
 
@@ -627,9 +634,55 @@ class BatchedSwarmEnv:
     # ------------------------------------------------------------------ #
 
     def _advance_drones(self, actions: Tensor) -> tuple[Tensor, Tensor, Tensor]:
-        """Point-mass kinematics with box and altitude limits."""
-        accel = actions.clamp(-1.0, 1.0) * MAX_ACCEL_MS2
-        vel = self.drone_vel + accel * self.cfg.dt_s
+        """**Velocity setpoints**, tracked by a rate-limited airframe.
+
+        `docs/REDUCTION.md` task 1. The action is a desired velocity in
+        `[-1, 1]^3`, scaled by the dash speed. The airframe then closes on it
+        subject to its acceleration envelope -- which is what PX4 and ArduPilot
+        offboard control actually consume over MAVLink, and what `PLAN.md` lists
+        as contribution C3.
+
+        ## Why this is the more faithful interface, and not merely a nicer one
+
+        📏 B0 does not solve the problem the learner was being handed. It
+        computes a **desired velocity** and converts it to acceleration with a
+        proportional servo at the last moment (`b0.py`). Commanding raw
+        acceleration hands the learner a double integrator with saturation and
+        makes it discover that inner loop from reward alone. Measured
+        consequence, eval split, deterministic policy: the learned policy sat at
+        the 25 m/s dash cap on **57 %** of steps and against the map boundary on
+        **23 %**, where B0 scores 3.1 % and 0.9 %.
+
+        🔒 **The acceleration envelope is kept, as a property of the airframe
+        rather than of the action.** Removing it would let a drone reverse from
+        +25 to −25 m/s inside one 0.4 s tick, and it is what `energy.py`'s
+        control-effort term and the reward's `effort` term consume. At
+        `MAX_ACCEL_MS2 = 10` and `dt = 0.4` the airframe closes at most **4 m/s
+        of velocity error per tick**, so rest to dash still takes ~6 ticks. The
+        policy chooses *where it wants to be going*; it no longer has to
+        integrate.
+
+        ⚠️ **The rate limit is per component, matching the convention this env
+        already used** -- the old code scaled each action component independently
+        by `MAX_ACCEL_MS2`, so a diagonal command always had up to `sqrt(3)x` the
+        axis limit. Keeping that convention is what makes B0 **bit-identical**
+        across this change (`test_core.py`), which in turn is what keeps every
+        inherited B0 number valid. A norm limit would be marginally more physical
+        and would silently move the baseline.
+        """
+        want_vel = actions.clamp(-1.0, 1.0) * DRONE_DASH_MS
+        # Cap the SETPOINT first: a diagonal command must not ask for more than
+        # the dash speed just because each axis is within it.
+        speed = want_vel.norm(dim=-1, keepdim=True)
+        want_vel = want_vel * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)
+
+        # The airframe tracks the setpoint, rate-limited by its accel envelope.
+        dv_max = MAX_ACCEL_MS2 * self.cfg.dt_s
+        dv = (want_vel - self.drone_vel).clamp(-dv_max, dv_max)
+        vel = self.drone_vel + dv
+        # Realised acceleration, for the energy model and the effort term. As
+        # before, this is the command after limiting and before the speed cap.
+        accel = dv / self.cfg.dt_s
 
         speed = vel.norm(dim=-1, keepdim=True)
         vel = vel * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)

@@ -33,7 +33,26 @@ learn it than reading it.
 
 ---
 
-## 1. Action space → velocity setpoints
+## 1. Action space → velocity setpoints — ✅ **DONE 2026-09-01**
+
+> ✅ `core._advance_drones` takes a **velocity setpoint** scaled by
+> `DRONE_DASH_MS`; the airframe closes on it rate-limited by `MAX_ACCEL_MS2`,
+> which is retained as a property of the airframe rather than of the action.
+> B0's `_servo` became `_velocity_command` and dropped `own_vel`.
+>
+> 🔒 **B0 is bit-identical across the change**, because the env's rate limit is
+> per component and `vel + ((want-vel)/4).clamp(-1,1)*4 == vel + (want-vel).clamp(-4,4)`.
+> `test_core.py::test_b0s_velocity_command_reproduces_the_old_servo_exactly`
+> pins it, so every inherited B0 number stays valid.
+>
+> ⚠️ `test_fidelity.py`'s `fly` fixture had to be repaired: a uniform action
+> resampled per step was a random walk in *velocity* under the old interface and
+> is a zero-mean command under the new one. 📏 Swarm spread fell 219 m → 56 m and
+> `chain_occluded` went to exactly 0. The assertions are unchanged; the fixture
+> now steers the swarm into a relay chain along the MCV→HVT axis and is asserted
+> to produce identical geometry at every rung.
+>
+> ⛔ **Gate A is NOT yet resolved** — that needs the 5-seed run.
 
 **Where:** `src/env/core.py::_advance_drones`, and the `VEL_SCALE_MS` /
 `MAX_ACCEL_MS2` constants.

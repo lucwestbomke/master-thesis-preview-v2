@@ -62,7 +62,6 @@ from ..env.core import (
     DRONE_CRUISE_MS,
     DRONE_DASH_MS,
     DT_S,
-    MAX_ACCEL_MS2,
     POS_SCALE_M,
     VEL_SCALE_MS,
     neighbour_index_table,
@@ -268,7 +267,7 @@ class B0Policy:
         self._update_repair(station, clr_mcv, edge_clr, edge_cap, nb_onpath, rank, n_relay)
 
         delta = torch.cat([station, (ALT_MAX_M - own_alt).unsqueeze(-1)], dim=-1)
-        return self._servo(delta, own_vel)
+        return self._velocity_command(delta)
 
     # ------------------------------------------------------------------ #
     # Target belief
@@ -522,13 +521,35 @@ class B0Policy:
 
     # ------------------------------------------------------------------ #
 
-    def _servo(self, delta: Tensor, own_vel: Tensor) -> Tensor:
-        """Proportional velocity servo -> normalised acceleration command.
+    def _velocity_command(self, delta: Tensor) -> Tensor:
+        """Proportional position→velocity law, emitted as a velocity setpoint.
 
-        The Block D waypoint harness used a position-P with velocity damping and
-        never approached the speed envelope; commanding a *velocity* and letting
-        the accel limit do the rest is what uses the 20 m/s cruise and 25 m/s
-        dash the airframe actually has.
+        🔒 **This used to end with an inner loop and no longer does.** Under the
+        acceleration action space its last line was
+
+            ((want - own_vel) / (MAX_ACCEL_MS2 * dt)).clamp(-1, 1)
+
+        -- a proportional velocity servo converting the desired velocity into an
+        acceleration command at the last moment. `docs/REDUCTION.md` task 1 moved
+        that loop into the airframe, where it belongs and where the *learner* now
+        gets it for free, so B0 simply says how fast it wants to go.
+
+        📏 **The two are exactly equivalent, and that is load-bearing.** The env
+        clamps the velocity error per component to `MAX_ACCEL_MS2 * dt`, so
+
+            old: vel + ((want - vel)/4).clamp(-1,1) * 4
+            new: vel + (want - vel).clamp(-4, 4)
+
+        are the same expression. B0's trajectories are therefore **bit-identical**
+        across the action-space change, which is what keeps every inherited B0
+        number valid — 57.3 % eval, 59.6 % train, observer stand-off 88.8 m — and
+        `test_core.py::test_b0s_velocity_command_reproduces_the_old_servo_exactly`
+        pins it. ⚠️ If that test ever fails, the baseline has moved and every
+        comparison in the thesis moves with it.
+
+        `own_vel` is gone from the signature deliberately: B0 no longer needs to
+        know its own velocity to command motion, which is precisely the asymmetry
+        `REDUCTION` task 1 removed between B0 and the learner.
         """
         cfg = self.cfg
         want = delta * cfg.gain_per_s
@@ -540,4 +561,6 @@ class B0Policy:
         )
         speed = want.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         want = want * (v_max / speed).clamp(max=1.0)
-        return ((want - own_vel) / (MAX_ACCEL_MS2 * self.dt)).clamp(-1.0, 1.0)
+        # `v_max <= DRONE_DASH_MS`, so this never actually clips; the clamp is
+        # the contract with `core._advance_drones`, not a limiter.
+        return (want / DRONE_DASH_MS).clamp(-1.0, 1.0)

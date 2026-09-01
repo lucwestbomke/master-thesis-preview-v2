@@ -21,8 +21,11 @@ from .core import (
     ALT_MIN_M,
     BANDWIDTH_HZ,
     BOX_HALF_M,
+    DRONE_DASH_MS,
+    DT_S,
     EGO_DIM,
     FLAT_DIM,
+    MAX_ACCEL_MS2,
     N_MAX,
     NEIGHBOUR_DIM,
     STAGES,
@@ -142,6 +145,99 @@ def test_positions_stay_in_the_box_and_the_altitude_band():
         assert env.drone_pos[..., :2].abs().max() <= BOX_HALF_M + 1e-4
         assert env.drone_pos[..., 2].min() >= ALT_MIN_M - 1e-4
         assert env.drone_pos[..., 2].max() <= ALT_MAX_M + 1e-4
+
+
+def test_the_action_is_a_velocity_setpoint_the_airframe_closes_on():
+    """🔒 `docs/REDUCTION.md` task 1. Holding a constant action must drive the
+    drone to that velocity and hold it there -- the defining property of a
+    setpoint interface, and the thing an acceleration interface does NOT do
+    (there, a held action integrates without bound until the speed cap)."""
+    env = make(num_envs=2, no_buildings=True)
+    a = zeros_like_actions(env)
+    a[..., 0] = 0.4  # ask for 40 % of dash along +x, and nothing else
+
+    for _ in range(30):
+        env.step(a)
+
+    want = 0.4 * DRONE_DASH_MS
+    assert torch.allclose(
+        env.drone_vel[..., 0], torch.full_like(env.drone_vel[..., 0], want), atol=1e-4
+    ), env.drone_vel[..., 0]
+    # and it HOLDS there rather than continuing to accelerate
+    before = env.drone_vel.clone()
+    env.step(a)
+    assert torch.allclose(env.drone_vel, before, atol=1e-4)
+
+
+def test_the_airframe_rate_limit_still_binds():
+    """The accel envelope is kept as a property of the airframe. Without it a
+    drone could reverse from +25 to -25 m/s inside one 0.4 s tick."""
+    env = make(num_envs=2, no_buildings=True)
+    a = zeros_like_actions(env)
+    a[..., 0] = 1.0
+    env.step(a)
+    dv_max = MAX_ACCEL_MS2 * env.cfg.dt_s
+    assert torch.allclose(
+        env.drone_vel[..., 0], torch.full_like(env.drone_vel[..., 0], dv_max), atol=1e-4
+    ), "one tick must move velocity by exactly the rate limit"
+
+    # a full reversal is rate-limited too, not instantaneous
+    a[..., 0] = -1.0
+    env.step(a)
+    assert torch.allclose(env.drone_vel[..., 0], torch.zeros_like(env.drone_vel[..., 0]), atol=1e-4)
+
+
+def test_zero_action_means_stop_rather_than_coast():
+    """The readable consequence of the change: commanding nothing decelerates to
+    rest within the rate limit. Under acceleration control, zero meant *coast*,
+    and a policy had to actively brake -- which is the inner loop B0 had and the
+    learner did not."""
+    env = make(num_envs=2, no_buildings=True)
+    a = zeros_like_actions(env)
+    a[..., 0] = 1.0
+    for _ in range(20):
+        env.step(a)
+    assert env.drone_vel[..., 0].min() > 20.0
+
+    for _ in range(10):
+        env.step(zeros_like_actions(env))
+    assert torch.allclose(env.drone_vel, torch.zeros_like(env.drone_vel), atol=1e-4)
+
+
+def test_b0s_velocity_command_reproduces_the_old_servo_exactly():
+    """🔒 The test that keeps every inherited B0 number valid.
+
+    B0 is the comparison everything in this thesis is measured against — 57.3 %
+    eval, 59.6 % train, observer stand-off 88.8 m. The action space changed
+    underneath it, so its behaviour must be shown NOT to have moved.
+
+    Under acceleration control B0 ended with a proportional servo,
+    `((want - vel) / (MAX_ACCEL_MS2 * dt)).clamp(-1, 1)`, which the env then
+    scaled back up. Under velocity control B0 emits `want / DRONE_DASH_MS` and
+    the env clamps the velocity error per component. The algebra:
+
+        old:  vel + ((want - vel) / 4).clamp(-1, 1) * 4
+        new:  vel + (want - vel).clamp(-4, 4)
+
+    ⚠️ If this fails, the baseline has moved and every comparison moves with it.
+    """
+    torch.manual_seed(0)
+    dt, dv_max = DT_S, MAX_ACCEL_MS2 * DT_S
+    vel = torch.empty(64, 3).uniform_(-DRONE_DASH_MS, DRONE_DASH_MS)
+    # `want` as B0 produces it: any velocity inside the dash ball.
+    want = torch.empty(64, 3).uniform_(-1.0, 1.0)
+    want = want * (DRONE_DASH_MS / want.norm(dim=-1, keepdim=True).clamp_min(1e-6)).clamp(max=1.0)
+
+    old_action = ((want - vel) / (MAX_ACCEL_MS2 * dt)).clamp(-1.0, 1.0)
+    old_vel = vel + old_action * MAX_ACCEL_MS2 * dt
+
+    new_action = (want / DRONE_DASH_MS).clamp(-1.0, 1.0)
+    new_want = new_action * DRONE_DASH_MS
+    speed = new_want.norm(dim=-1, keepdim=True)
+    new_want = new_want * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)
+    new_vel = vel + (new_want - vel).clamp(-dv_max, dv_max)
+
+    assert torch.allclose(old_vel, new_vel, atol=1e-4), (old_vel - new_vel).abs().max()
 
 
 def test_hitting_a_limit_zeroes_that_velocity_component():
