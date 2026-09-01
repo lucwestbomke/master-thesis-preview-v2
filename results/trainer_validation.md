@@ -357,3 +357,47 @@ this project has judged interventions on** (`w_hold` +1.65, DeepSets -> GNN
 (Mann-Whitney U = 19 of 25, short of the n=5 threshold of 21). Recorded as an
 open question, not settled by preference. Re-decide it at 10 seeds if it ever
 sits on a reported result.
+
+---
+
+## ⚠️ Correction — Gate A's pathologies did NOT resolve, 2026-09-01
+
+Earlier in this session I read the trainer's **training-time** `at_boundary` and
+`at_speed_cap` (0.05–0.08 and 0.10–0.18) and concluded that the pathologies
+motivating `docs/REDUCTION.md` task 1 had largely resolved with the critic fix.
+**That was wrong**, and the eval-time measurement says so.
+
+📏 `scripts/measure_potential.py`, eval split, stage 4, F4, CUDA, **deterministic**
+policy — the same footing as the inherited 57 % / 23 %:
+
+| | steps > 24 m/s | steps at map boundary |
+|---|---|---|
+| Gate A keep-rule | **< 20 %** | **< 5 %** |
+| B0 | 3.6 % | 2.6 % |
+| deepsets seed 0 | 10.8 % | **19.7 %** ⛔ |
+| deepsets seed 3 | **26.1 %** ⛔ | **14.5 %** ⛔ |
+| inherited learned policy | 57 % | 23 % |
+
+**The speed-cap pathology improved a great deal** (57 % → 10.8–26.1 %) and the
+median airspeed fell 24.71 → 10.04/13.54 m/s, onto the minimum-power airspeed.
+**The boundary pathology did not** — 14.5–19.7 % against a 5 % bar and B0's 2.6 %,
+a 6–8× ratio.
+
+🔍 **The methodological error is the one this project keeps re-learning.** The
+training-time diagnostic is a *stochastic* policy on *training* routes under a
+curriculum that mixes in 20 % of shorter, easier episodes. The gate is declared
+on a *deterministic* policy on *held-out* routes at stage 4 for the full 600
+steps. They are different quantities and I compared them. `DECISIONS.md` records
+the same shape of error against the 0.0544 energy figure: *"computed from the
+power curve and never checked against what the policies fly."*
+
+⚠️ **One caveat on the comparison itself.** `at_boundary` is defined here as
+"either horizontal coordinate within 1 m of the box edge", and that is *my*
+definition — the predecessor's was not carried over. B0 reads **2.6 %** here
+against their **0.9 %**, so the two definitions are not identical and the learned
+19.7 % is not strictly comparable to their 23 %. The **within-measurement** ratio
+(learned 14.5–19.7 % against B0's 2.6 %) is the defensible statement.
+
+🔒 **Consequence: Gate A stands as declared and `REDUCTION` task 1 stays on the
+critical path.** The velocity action space is motivated by a surviving, measured
+pathology, not only by MAVLink fidelity.
