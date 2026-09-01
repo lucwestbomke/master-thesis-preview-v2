@@ -278,3 +278,82 @@ Budget-W (trunk 128 -> 512) keeps its 5 seeds and its rule unchanged.
 of ~25 min. 📏 `AGENTS.md`: "Compute is not a constraint." Buying an
 interpretable answer for four hours of a rented GPU is the trade this project has
 repeatedly failed to make.
+
+---
+
+## 📏 The frozen critic — diagnosed and fixed, 2026-09-01, CUDA, 5 seeds
+
+### The A/B, against the rule declared before it ran
+
+> **Rule:** the fix keeps the median (>= 39 %, within IQR of 41.1 %) **and**
+> raises the worst seed above 25 %.
+
+| condition | per seed | median | IQR | range | worst |
+|---|---|---|---|---|---|
+| inherited (CUDA) | — | 40.7 % | 3.2 | — | 29.6 |
+| ours, **before** the fix | 1.8 · 39.1 · 41.1 · 43.0 · 43.5 | 41.1 % | 3.9 | 41.7 | **1.8** |
+| **A — clip 0.2, corrected reference** | 43.9 · 44.4 · 44.5 · 44.5 · 46.3 | **44.5 %** | **0.1** | **2.4** | **43.9** |
+| **B — `--value-clip 0`** | 42.7 · 46.2 · 47.0 · 47.6 · 48.0 | **47.0 %** | 1.4 | 5.3 | 42.7 |
+| B0, same device and split | — | 60.0 % | 3.2 | — | 54.7 |
+
+✅ **Both arms pass both clauses outright.** The collapse is gone: the worst seed
+moves **1.8 -> 43.9**, and the seed IQR **3.9 -> 0.1**.
+
+### The mechanism, confirmed on the same seed
+
+📏 Seed 0, the seed that collapsed, before and after:
+
+| | `grad_norm_critic` | zeros | `capable` end | `at_boundary` end |
+|---|---|---|---|---|
+| before | min **0.0000**, frozen from progress 0.20 | 2 of 16 log lines exactly zero | 0.026 | **0.875** |
+| after | min **0.357**, never zero | 0 of 16 | **0.446** | **0.054** |
+
+The critic never freezes, and the map-boundary pathology it caused (87.5 % of
+steps against the wall) disappears with it.
+
+### ⛔ What this invalidates, and it is not small
+
+skrl has **both** defects, verified in its 2.1.0 source: `record_transition`
+stores values raw (`_value_preprocessor(values, inverse=True)`) and `_update`
+re-normalises them with statistics that have since moved
+(`_value_preprocessor(values, train=True)`); and its value clip is a bare
+`torch.clip`, which has exactly zero gradient outside its range. **This is skrl
+bug number five, and it is the most consequential** — the other four announced
+themselves with a collapse, this one silently depressed every reported number and
+inflated every seed spread.
+
+⚠️ **Consequence: every inherited learned-policy number was produced with this
+defect live.** MLP 31.2 %, DeepSets 38.1 %, GNN 41.2 %, and the RQ2 finding built
+on them ("MLP -> DeepSets +6.9 pp robust; DeepSets -> GNN +0.4 pp, a null") were
+all measured through it, as were the six pre-declared interventions that came
+back null. Those measurements are not *wrong* — they were run correctly against
+the trainer of the time — but they are **no longer the best estimate**, and the
+architecture ladder has to be re-run before RQ2 is reported.
+
+⚠️ **What it does NOT change:** B0 is unaffected — it is a scripted policy with
+no critic. So the headline comparison survives: B0 **60.0 %** against the GNN's
+44.5-47.0 %, a gap of **13-15 pp** where it was 16.1. `PLAN.md`'s premise is
+intact and the thesis framing is unchanged.
+
+### 📏 Budget-S is answered as a side effect
+
+The seed-count question was declared as "do 5 seeds place the median within
++-3 pp of 20 seeds?" With a measured IQR of **0.1** (arm A) and **1.4** (arm B)
+and a full range of 2.4 and 5.3 pp, five seeds are **ample** — the question
+dissolves rather than needing 20 runs. ⚠️ It should be re-asked once the
+adversary is in play, because an adaptive jammer may restore the variance the
+frozen critic was supplying.
+
+### Which arm ships
+
+**Arm A** (`value_clip = 0.2`, corrected reference) is the default: it wins on
+the **worst seed** (43.9 against 42.7), which is the metric `AGENTS.md` judges
+on, and its spread is 2x tighter, which makes every downstream worst-seed gate
+more sensitive.
+
+⚠️ **But B's median is 2.5 pp higher, and that is larger than several effects
+this project has judged interventions on** (`w_hold` +1.65, DeepSets -> GNN
++0.4). At 5 seeds the two overlap and the difference is not significant
+(Mann-Whitney U = 19 of 25, short of the n=5 threshold of 21). Recorded as an
+open question, not settled by preference. Re-decide it at 10 seeds if it ever
+sits on a reported result.
