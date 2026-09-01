@@ -42,7 +42,7 @@ from torch import Tensor
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.baselines.b0 import B0Policy
-from src.env.core import STAGES, BatchedSwarmEnv, EnvConfig
+from src.env.core import BOX_HALF_M, STAGES, BatchedSwarmEnv, EnvConfig
 from src.env.energy import DEFAULT_AIRFRAME, total_power_w
 from src.env.reward import DEFAULT_WEIGHTS, PHI_V2, RewardWeights, Snapshot, potential
 
@@ -398,6 +398,19 @@ def band(bank: dict[str, Tensor]) -> None:
     cap = bank["e2e_capacity_mbps"]
     print(
         "    e2e capacity    p10/p50/p90  " + " / ".join(f"{x:6.1f}" for x in q(cap, 0.1, 0.5, 0.9))
+    )
+    # 🔒 The two columns Gate A is declared on (`PLAN.md`): "steps at the speed
+    # cap fall below 20 % AND steps at the map boundary below 5 %". 📏 The
+    # inherited figures they are judged against are **57 %** and **23 %** for the
+    # learned policy, against B0's 3.1 % and 0.9 %. Both are computed from
+    # tensors this script already banks, so the gate can be read off the same
+    # measurement that produced the reference rather than reconstructed.
+    at_cap = float((bank["speed"] > 24.0).float().mean()) * 100.0
+    xy = bank["drone_pos"][..., :2]
+    at_wall = float((xy.abs() >= BOX_HALF_M - 1.0).any(dim=-1).float().mean()) * 100.0
+    print(
+        f"    steps at speed cap (>24 m/s) {at_cap:5.1f} %   "
+        f"steps at map boundary {at_wall:5.1f} %      <- Gate A"
     )
     print(
         f"    observed {float(obs.float().mean()) * 100:5.1f} %   "
