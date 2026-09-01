@@ -91,3 +91,65 @@ it is reported alongside `N` = 5 whatever the N=5 result says.
 ## Results
 
 *(appended below as they land; the declaration above is not edited)*
+
+## 📏 Stage A — measured 2026-09-01, CUDA, train split, 5 seeds per cell
+
+| architecture | cadence | per seed | median | IQR | worst |
+|---|---|---|---|---|---|
+| **mlp** | **base** ⬅ | 31.3 · 33.1 · 33.6 · 35.6 · 36.3 | **33.6** | 2.46 | 31.3 |
+| mlp | deep | 23.5 · 29.9 · 30.5 · 32.1 · 33.8 | 30.5 | 2.26 | 23.5 |
+| mlp | wide | 21.1 · 29.0 · 29.3 · 32.5 · 32.9 | 29.3 | 3.51 | 21.1 |
+| **deepsets** | **deep** ⬅ | 41.0 · 43.6 · 44.1 · 44.6 · 48.2 | **44.1** | 1.00 | 41.0 |
+| deepsets | wide | 35.6 · 37.8 · 38.2 · 39.9 · 46.1 | 38.2 | 2.09 | 35.6 |
+| deepsets | base | 32.4 · 33.4 · 36.7 · 39.5 · 39.8 | 36.7 | 6.17 | 32.4 |
+| **gnn** | **deep** ⬅ | 43.9 · 44.4 · 44.5 · 44.5 · 46.3 | **44.5** | **0.14** | **43.9** |
+| gnn | wide | 35.5 · 38.0 · 40.8 · 41.0 · 42.3 | 40.8 | 2.97 | 35.5 |
+| gnn | base | 32.8 · 35.9 · 36.0 · 38.3 · 40.9 | 36.0 | 2.37 | 32.8 |
+
+**Cadence selection**, by the rule declared above (highest median; ties on IQR,
+then worst seed). No cell tied, so the rule resolved without its tiebreakers:
+**mlp → `base`, deepsets → `deep`, gnn → `deep`.**
+
+### 🔍 The cadence finding replicates exactly, on a fixed trainer
+
+📏 The predecessor measured the MLP as **the only rung preferring `base`**, with
+DeepSets and GNN preferring `deep`, and `wide` losing everywhere. All three
+reproduce here. That is an independent replication under a trainer whose critic
+does not freeze, and it retires the worry that the cadence grid was an artefact
+of the defect.
+
+⚠️ **It also means the deep-only contrast is still confounded.** The 33.6 % MLP
+figure is its `base` cell; comparing architectures on `deep` alone would compare
+the MLP at its *worst* cadence and inflate the first contrast. Stage B uses each
+architecture's own winner, which is what `MODELS.md` rule 2 requires.
+
+### Preview of the contrasts — ⚠️ train split, not the reported number
+
+| contrast | effect | ranges | declared verdict |
+|---|---|---|---|
+| MLP → DeepSets | **+10.5 pp** | [31.3, 36.3] vs [41.0, 48.2] — **disjoint** | **confirmed** |
+| DeepSets → GNN | **+0.4 pp** | [41.0, 48.2] vs [43.9, 46.3] — overlapping | **null** |
+
+🔍 **Both inherited conclusions survive the trainer fix, and the second
+replicates to the decimal.** The predecessor measured +6.9 pp and **+0.4 pp**;
+this measures +10.5 pp and **+0.4 pp**. So the frozen critic did not change RQ2's
+ordering — it added noise around it. The permutation-invariance effect is now
+resolved with **completely disjoint seed ranges**, which the inherited 6 pp seed
+spread could never have shown.
+
+### ⚠️ One observation that is NOT a finding, recorded so it is not lost
+
+At the same median, the GNN is far more *stable* than DeepSets: IQR **0.14
+against 1.00**, range **2.4 pp against 7.2 pp**, and its worst seed is **43.9
+against 41.0 — 2.9 pp better**.
+
+⛔ This is **not** promoted to a result. The rule declared before the run judges
+the contrast on non-overlap of ranges, and by that rule it is a null. Reading a
+worst-seed advantage out of the data *after* seeing it is exactly the post-hoc
+rule-invention this project forbids, and `AGENTS.md`'s "judge on the worst seed"
+is a rule for gates that were declared that way — not a licence to re-judge a
+gate that was not.
+
+It is recorded because it is a *hypothesis worth pre-declaring next time*: **the
+relational rung may buy variance reduction rather than mean improvement.** If
+anyone wants that, it needs its own gate, declared before its own run.
