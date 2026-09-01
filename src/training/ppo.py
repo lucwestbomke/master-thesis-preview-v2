@@ -220,7 +220,7 @@ class TrainConfig:
     shape are recorded in `docs/REDUCTION.md`.
     """
 
-    architecture: str = "gnn"
+    architecture: str = "deepsets"
     hidden: int | None = None
     critic_hidden: int = 256
     num_envs: int = 4096
@@ -438,6 +438,28 @@ class PPOTrainer:
             cfg.discount_factor,
             cfg.gae_lambda,
         )
+        # 📏 Explained variance -- the standard "is the critic any good?"
+        # diagnostic, and the one this project never had. `1 - Var(R - V)/Var(R)`:
+        # 1.0 is a perfect value function, 0.0 is no better than predicting the
+        # mean return, negative is worse than that.
+        #
+        # ⚠️ There is a CEILING on it here, and the ceiling is structural. The
+        # global state is repeated per drone, but `reward()` is per-drone (team
+        # terms plus INDIVIDUAL energy and effort costs), so N rows share one
+        # input and carry N different targets. The critic can only learn their
+        # mean; the between-drone spread is irreducible error that goes straight
+        # into advantage noise. `return_spread_between_drones` measures it, so
+        # the ceiling can be read off rather than guessed at.
+        b, n = self.env.cfg.num_envs, self.env.cfg.num_drones
+        resid = returns - self.buf["value"]
+        self._accumulate(
+            {
+                "explained_variance": 1.0 - resid.var() / returns.var().clamp_min(1e-8),
+                "return_spread_between_drones": returns.view(-1, b, n).std(dim=-1).mean(),
+                "return_std": returns.std(),
+            }
+        )
+
         # Normalise advantages once over the whole batch, as PPO does -- not per
         # minibatch, which would rescale each chunk by its own noise.
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)

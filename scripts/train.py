@@ -66,6 +66,8 @@ WATCH = (
     "grad_norm_critic",
     "grad_kept",
     "value_loss",
+    "explained_variance",
+    "return_spread_between_drones",
     "steps_per_s",
 )
 
@@ -78,7 +80,18 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--arch", default="gnn", choices=ARCHITECTURES)
+    ap.add_argument(
+        "--arch",
+        default="deepsets",
+        choices=ARCHITECTURES,
+        help="📏 `deepsets` is the default since RQ2 stage B: the GNN is a null "
+        "against it at every swarm size (+1.8 / +0.9 / +1.3 pp at N = 3/5/8, "
+        "ranges overlapping), its worst seed at N = 8 is WORSE (46.1 vs 52.2), "
+        "and PLAN.md expects PyTorch Geometric to export badly to TensorRT. "
+        "⛔ The `gnn` rung is KEPT, not deleted -- RQ2 reports it as a measured "
+        "null and Gate C asks which architectures export at all. A rung you "
+        "delete is a result you can no longer state",
+    )
     ap.add_argument("--hidden", type=int, default=None, help="actor trunk width")
     ap.add_argument("--critic-hidden", type=int, default=256)
     ap.add_argument(
