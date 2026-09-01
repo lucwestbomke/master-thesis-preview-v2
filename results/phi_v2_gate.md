@@ -72,3 +72,47 @@ the gain came from `Φ_standoff` alone and `w_cover` is carrying nothing.
 ## Results
 
 *(appended below; the declaration is not edited)*
+
+## 📏 Result — measured 2026-09-01, CUDA, eval split, 5 seeds. ⛔ **KILL.**
+
+| metric | control (`shipped`) | `PHI_V2` | Δ | rule |
+|---|---|---|---|---|
+| **`observer_range_m`** | **218.9** [188.5–230.2] | **207.0** [179.0–240.2] | **−11.8 m** | needed **≥ −20 m** ⛔ |
+| `mission_capable` | 39.84 % [36.50–45.82] | 40.76 % [37.46–44.33] | +0.92 pp | no regression ✅ |
+| `off_axis_m` | 266.0 [219.0–288.3] | 252.5 [246.9–264.9] | −13.5 m | prediction: toward 107 ⛔ |
+| `observer_tenure` | 39.2 | 42.9 | +3.7 | — |
+| `role_entropy` | 0.51 | 0.54 | +0.03 | — |
+
+Per-seed `observer_range_m` — control 188.5 · 202.4 · 218.9 · 219.5 · 230.2;
+`PHI_V2` 179.0 · 202.7 · 207.0 · 232.3 · 240.2. **Heavily overlapping**, and two
+treatment seeds are worse than the control's worst.
+
+**The kill rule is met outright.** The observer moved **11.8 m of a 130 m gap**
+against B0's 88.7 m.
+
+### ☠️ This is the seventh Φ null, and it is the one that closes the axis
+
+The six before it were retro-explained in `docs/inherited/DECISIONS.md` as
+arithmetic rather than mechanism: *"Each scaled a potential whose directional
+gradient in the operating regime was 0.013–0.03 per step. The reason they failed
+is arithmetic, not mechanism."*
+
+📏 **`PHI_V2` fixed the arithmetic and the behaviour still did not move.** The
+closing gradient went **0.0133 → 0.0774 per 8 m step (5.8×, from 0.25× the energy
+bar to 1.42×)**, and the recall gradient for a role-less drone went from **exactly
+0.0000** to +0.0078/+0.0010/+0.0003 with a whole-trip value of +0.34 to +0.47.
+Every one of those is measured, on this trainer, on the eval split.
+
+🔒 **So the retro-explanation is falsified.** The potential's gradient magnitude
+is **not** the mechanism behind the observer stand-off. That is a stronger and
+more useful negative result than the six that preceded it, because it was
+declared in advance against a mechanism that had been *measured to be adequate*
+rather than assumed.
+
+⛔ **Do not propose another Φ intervention without a new mechanism.** "Make the
+potential steeper / redistribute it / centre it elsewhere" is now closed on
+evidence, at 5 seeds, with the gradient measured before and after.
+
+⚠️ `mission_capable` +0.92 pp and `observer_tenure` +3.7 are *not* findings —
+both sit inside the seed ranges, and PBRS cannot change the optimum in any case.
+Ships at the shipped potential; `PHI_V2` stays available and off.
