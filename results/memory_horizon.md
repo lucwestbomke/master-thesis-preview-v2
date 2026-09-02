@@ -132,9 +132,21 @@ memory and the policy does not"), it is entangled with
 against a required 95). Anyone pursuing it needs a new gate, declared before its
 own run, and should read the credit measurement first.
 
-📏 **Where the evidence actually points:** B0's advantage is **role assignment**,
-not memory. `B0-geodesic` → `B0` is +10.1 pp and the belief filter accounts for
-at most 0.4 pp of it.
+📏 **Where the evidence actually points:** B0's advantage is not memory — the
+belief filter accounts for at most 0.4 pp of the +10.1 pp.
+
+⛔ **CORRECTED 2026-09-02, same day:** this section originally attributed the
+remaining ~10 pp to **role assignment**. That was inference, not measurement, and
+[`b0_ablation.md`](b0_ablation.md) measured it: **local link repair is +6.9 pp
+and ranked roles are +3.4 pp** (5/5 paired seeds each). Roles are a *precondition*
+for repair — `_update_repair` is gated on `is_relay` — so they are load-bearing
+for ~10.3 of the 11.0 pp, but they only *score* 3.4.
+
+⚠️ That file also reopens a question this one closed, for a different mechanism:
+B0's hill climb carries **one step** of search state (`prev_score`, `lat_dir`),
+which the oracle bound does not cover and which `k = 2` frame stacking supplies.
+🔒 The verdict here stands as written — it closed **target** memory, at a p50 of
+35 steps and a p90 of 320, and that closure is intact.
 
 ## Regenerate
 

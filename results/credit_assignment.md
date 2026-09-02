@@ -151,6 +151,14 @@ that one specific mechanism is unavailable to the current architecture. That is 
 statement about what *cannot* work, which is weaker than a fix and more durable
 than one.
 
+⛔ **And 2026-09-02 put a number on the prize.**
+[`b0_ablation.md`](b0_ablation.md) decomposed B0's +10.1 pp: **ranked roles are
+worth 3.0–3.4 pp**, local link repair 6.9 pp, the belief filter ~0. So role credit,
+even acquired perfectly, is worth **about a fifth of the 15.0 pp gap**. 🔒 Roles
+remain load-bearing — repair is gated on `is_relay` and unavailable without them —
+but this file should not be read as saying role credit closes the gap. Nothing
+measured closes the gap; `PLAN.md` §3 is why.
+
 ---
 
 ## What it redirects the search to
