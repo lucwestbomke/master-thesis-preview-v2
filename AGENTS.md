@@ -20,30 +20,53 @@ binding**:
 
 ## The claim
 
+> 🔍 **Exploitability, not capability, is the right axis on which to compare
+> learned and scripted multi-agent policies.**
+
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
 command vehicle over a multi-hop chain at >= 15 Mbps, while a jammer degrades
-links. **The scripted baseline B0 beats every learned policy on the static task
-by 16.1 pp, and that is the expected outcome** — heuristics win static, fully
-specified problems.
+links. 📏 **The scripted baseline B0 wins the static task by 15.0 pp** (55.7 %
+against the GNN's 40.7 %, eval split, 5 seeds) — and that is a **settled premise
+of this work, not an open question.** Heuristics win static, fully specified
+problems, and [`PLAN.md`](PLAN.md) §3 closes the axis on three independent lines
+of measured evidence:
 
-🔍 So the question is re-pointed: **how far does each policy degrade when the
-adversary adapts to it?** Learning earns its keep against an adaptive opponent,
-and B0 hill-climbs deterministically, so it is exploitable in a way a learned
-policy need not be.
+* 📏 the gap is **`observed` and nothing else** — conditioned on a sightline the
+  GNN converts it as well as B0 does, 0.620 against 0.617;
+* 📏 **B0 wins the reward too**, 222.9 against 85.8 `episode_return`, and
+  `episode_return` rank-correlates with `mission_capable` at **ρ = 0.987** over
+  20 rows — so the objective is not misspecified;
+* 📏 **eight pre-declared interventions, eight nulls**, the last with a
+  *measured-adequate* gradient.
 
-Three contributions, each able to fail on its own — [`PLAN.md`](PLAN.md):
+⛔ **So stop asking whether learned control beats the heuristic on the static
+task.** The protagonist is the strongest available policy and it happens to be
+scripted; the question asked of it is how much of that capability an adversary
+can take away.
 
-1. **The adversary learns.** A directional jammer that chooses where to point.
-   Ladder J0–J3 is **built** (`EnvConfig.jammer`); J4 is not. 📏 The inherited
-   probe measured an 11 pp window (B0 58.6 % → 47.7 % under per-step
-   retargeting), but ⚠️ **the built J3 is weaker than J2** — 44.5 % against
-   41.8 % — because "the chain's weakest receiver" is not the most damaging
-   target. See [`results/j_ladder.md`](results/j_ladder.md).
-2. **The policy runs on the drone.** ONNX → TensorRT on a Jetson Orin Nano.
-   Latency, p99 jitter, power — and *does quantisation degrade coordination more
-   than control?*
-3. **The action space is velocity, not acceleration.** What MAVLink offboard
-   actually consumes.
+**Four objectives, one arc** — an adversary that adapts → a policy co-trained
+against it → running on the hardware that has to fly it. Full text in
+[`PLAN.md`](PLAN.md) §2:
+
+1. **RQ1 — does the heuristic's advantage survive an adversary that adapts?**
+   The exploitability gap, J1 → the strongest rung reached. Gate B.
+2. **RQ2 — is adversary capability monotone in adversarial pressure?**
+   📏 **No.** J2 (a parked beam) beats J3B (per-step best response) and J3
+   (greedy) — 41.8 % against 42.2 % and 44.5 %. Committing beats re-optimising.
+   ⚠️ Smoke-measured at one seed; the 5-seed CUDA re-run is the next thing that
+   happens. [`results/j_ladder.md`](results/j_ladder.md).
+3. **RQ3 — does adversarial co-training produce robustness or opponent-overfit?**
+   J4, a learned jammer with an opponent pool, then the full cross-product.
+   🔒 The **off-diagonal** is the result. ⛔ J4 is **not built**.
+4. **RQ4 — does it survive the airframe?** ONNX → TensorRT on a Jetson Orin
+   Nano. Latency, p99 jitter, power — and *does quantisation degrade
+   coordination more than control?* Gate C. 🔧 Pure Python.
+
+⚠️ **The velocity action space is no longer a contribution.** Gate A resolved
+against it: 📏 the speed-cap pathology vanished (26.1 % → 0.4 %) and boundary
+occupancy quadrupled (14.5 % → 72.6 %) at a cost of 18.3 pp with disjoint seed
+ranges. It ships off, as a negative result with a mechanism —
+[`results/gate_a.md`](results/gate_a.md).
 
 ---
 
@@ -54,7 +77,7 @@ Three contributions, each able to fail on its own — [`PLAN.md`](PLAN.md):
 | `data/frankfurt_box.npz` | buildings + road graph as tensors. **Committed on purpose** — it IS the environment | 🔒 frozen |
 | `src/env/occlusion.py` | batched segment-vs-**oriented**-box (slab method), 2.5D. `torch.compile`d | ✅ inherited, unchanged |
 | `src/env/channel.py` | path loss by link class, SINR, Shannon with a modulation cap | ✅ inherited, unchanged |
-| `src/env/core.py::_beam_gain_db` | the **directional jammer**, 3GPP TR 38.901 element pattern. J0–J3 | ✅ own |
+| `src/env/core.py::_beam_gain_db` | the **directional jammer**, 3GPP TR 38.901 element pattern. J0–J3B | ✅ own |
 | `src/env/routing.py` | hop-limited widest-path DP, `min(C_i)/min(n, 3)` | ✅ inherited, unchanged |
 | `src/env/energy.py` | rotary-wing propulsion power (U-shaped), radio DC draw | ✅ inherited, unchanged |
 | `src/env/reward.py` | mission term + potential-based shaping. Carries `PHI_V2` | ⚠️ inherited, **to reduce** |
