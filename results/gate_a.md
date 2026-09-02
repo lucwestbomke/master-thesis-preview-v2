@@ -86,3 +86,72 @@ a probe that would catch it.
 
 ⛔ Until that resolves, **acceleration remains the shipped action space** and
 contribution C3 is an open question rather than a delivered result.
+
+---
+
+## 📏 The curves: "learned, then drifted to the wall" — not "never explored"
+
+Training traces of the two failed velocity seeds:
+
+| | `capable` peak → final | `at_boundary` start → final |
+|---|---|---|
+| vel-s0 | 0.359 (prog 0.20) → **0.294** | 0.019 → **0.175** |
+| vel-s3 | 0.340 (prog 0.20) → **0.125** | 0.033 → **0.478** |
+
+Both **learn normally for the first fifth of the run**, then decay monotonically
+while boundary occupancy climbs. `explained_variance` is 0.94–0.98 throughout, so
+the critic is healthy — this is not the frozen-critic failure returning.
+`at_speed_cap` is ~0.00 for the whole run, confirming the interface change did
+what it was meant to.
+
+⚠️ **My predicted mechanism was wrong.** I argued the velocity interface explores
+too weakly and the policy would *never* find the target. It finds it, then loses
+it. The right description is **drift into an absorbing region**, not failure to
+explore.
+
+🔍 **And there is a mechanism specific to this interface.** At the boundary
+`_advance_drones` zeroes the velocity component that hit the limit. Under
+**acceleration** control, exploration noise is *integrated* into velocity, so
+noise accumulates across ticks and eventually pushes a stuck drone off the wall.
+Under **velocity setpoints** each tick is an independent draw: if the policy mean
+commands into the wall, roughly half of all draws still command into the wall and
+the drone stays. **The wall is stickier under velocity control**, and escaping it
+depends on the per-tick noise rather than on accumulated noise.
+
+That predicts more exploration helps, and it does.
+
+## 📏 `--initial-log-std 0.3` (sigma 0.61 → 1.35), 5 seeds — training-time
+
+| | `capable` final | `at_boundary` final | `at_speed_cap` final |
+|---|---|---|---|
+| velocity, sigma 0.61 | 0.294 · 0.125 | 0.175 · 0.478 | ~0.005 |
+| **velocity, sigma 1.35** | **0.354–0.437** | **0.053–0.149** | **0.010–0.016** |
+| acceleration, sigma 0.61 | 0.44–0.49 | 0.048–0.077 | 0.10–0.18 |
+
+⛔ **These are training-time diagnostics and Gate A is not judged on them.**
+Earlier in this session exactly that confusion produced a wrong conclusion
+(`trainer_validation.md`, the correction). The gate needs
+`scripts/measure_potential.py` on the deterministic policy, eval split.
+
+## 🔒 Declared before the next runs: the comparison must be at matched exploration
+
+Raising `initial_log_std` changes the **policy class**, not the action space. So
+comparing *velocity at sigma 1.35* against *acceleration at sigma 0.61* would
+confound the two changes, and a win could be entirely the exploration.
+
+**The 2x2 is therefore required**, and the missing cell is
+**acceleration at sigma 1.35**:
+
+| | sigma 0.61 | sigma 1.35 |
+|---|---|---|
+| acceleration | ✅ 39.8 % | ⬅ **must run** |
+| velocity | ✅ 21.5 % | ⬅ **must score** |
+
+| | rule |
+|---|---|
+| **the action space is the cause** | velocity beats acceleration at *matched* sigma, and Gate A's two pathology bars are met at that sigma |
+| **exploration is the cause** | acceleration also gains at sigma 1.35 by a comparable margin — then the 18 pp was never about the interface, and `initial_log_std` is the finding |
+| **both** | report the main effects separately and do not attribute the total to either |
+
+⛔ Gate A's original bars are unchanged: speed cap < 20 % **and** boundary < 5 %,
+on the deterministic policy, eval split.
