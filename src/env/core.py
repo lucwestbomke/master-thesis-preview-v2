@@ -131,7 +131,7 @@ JAMMER_PEAK_GAIN_DBI = 12.0
 #:
 #: Collapsing them would confound RQ1's jammer rung with the curriculum ramp,
 #: which `docs/inherited/BLOCK_F.md` decision 4 forbids.
-Jammer = Literal["J0", "J1", "J2", "J3"]
+Jammer = Literal["J0", "J1", "J2", "J3", "J3B"]
 BANDWIDTH_HZ = 10e6
 NOISE_FIGURE_DB = 7.0
 
@@ -361,7 +361,8 @@ class EnvConfig:
     #: | `J0` | none | that the jammer matters at all |
     #: | `J1` | isotropic, fixed power | the inherited condition. 📏 B0 58.6 % |
     #: | `J2` | directional, **fixed** target (the MCV) | separates *directionality* from *adaptivity*. ⛔ Not optional: without it, "the adaptive jammer beat B0" might only mean "a beam beat B0" |
-    #: | `J3` | directional, **greedy-adaptive** | adaptive without learning. 📏 the probe measured 47.7 % |
+    #: | `J3` | directional, **greedy** — the chain's weakest receiver | `PLAN.md` §3's literal specification. 📏 **weaker than J2** (44.5 % against 41.8 %) |
+    #: | `J3B` | directional, **best response** — the target that most reduces end-to-end capacity | the adversary the inherited 47.7 % probe measured, and the one Gate B needs |
     #:
     #: ⛔ `J4` (a *learned* jammer) is deliberately absent. `PLAN.md` marks it the
     #: stretch and **not load-bearing**, and an enum value that silently emits a
@@ -424,8 +425,8 @@ class EnvConfig:
     training_extras: bool = False
 
     def __post_init__(self) -> None:
-        if self.jammer not in ("J0", "J1", "J2", "J3"):
-            raise ValueError(f"jammer must be one of J0-J3, got {self.jammer!r}")
+        if self.jammer not in ("J0", "J1", "J2", "J3", "J3B"):
+            raise ValueError(f"jammer must be one of J0, J1, J2, J3, J3B, got {self.jammer!r}")
         if self.fidelity not in LADDER:
             raise ValueError(f"fidelity must be one of {sorted(LADDER)}, got {self.fidelity!r}")
         if self.duplexing_override is not None:
@@ -849,16 +850,124 @@ class BatchedSwarmEnv:
         if cfg.jammer == "J0":
             return torch.zeros(cfg.num_envs, cfg.n_radio, device=self.device)
 
-        r = cfg.n_radio
-        d = (radio - self.hvt_pos.unsqueeze(1)).norm(dim=-1)
-        los = channel_clr[:, :r, self.hvt_idx] >= 0.0
-        pathloss = channel.pathloss_a2g_umi_av_db(d, radio[..., 2], los)
+        pathloss = self._jammer_pathloss_db(radio, channel_clr)
         eirp_dbm = JAMMER_DBM + self._beam_gain_db(radio)
         return (
             channel.dbm_to_mw(eirp_dbm - pathloss)
             * self.jammer_on.unsqueeze(-1)
             * float(cfg.channel_jammer)
         )
+
+    def _update_best_response_target(
+        self, aux: dict[str, Tensor], radio: Tensor, channel_clr: Tensor
+    ) -> Tensor:
+        """`J3B`: aim where it hurts most, by evaluating every candidate.
+
+        For each of the `n_radio` nodes the emitter could point at, recompute
+        what the swarm's end-to-end capacity *would* be, and take the argmin.
+        This is the adversary the inherited probe called **"best target each
+        step"** and measured at **47.7 %** — the 11 pp window the whole thesis is
+        pointed at.
+
+        ⚠️ **It is a different adversary from `J3`, and conflating them cost a
+        measurement.** `PLAN.md` §3 specifies J3 as *"retarget the chain's
+        weakest receiver each step"*, a greedy heuristic — and 📏 that heuristic
+        measures **weaker than the fixed-target J2** (44.5 % against 41.8 %),
+        because the weakest link is not the most damageable one and because
+        greedy retargeting chases its own effect: jam X, the router reroutes, Y
+        is now weakest, X recovers. A best response has neither problem.
+
+        🔒 **Still one step of latency**, and for the same reason as J3: the
+        counterfactual is evaluated against the geometry the emitter has just
+        observed, and applied on the next step. An adversary that could aim at
+        the chain its own aiming produces would be solving a fixed point the
+        physics does not offer it.
+
+        ⛔ **Isotropic is not a candidate.** The rung is *directional* by
+        definition, and letting the emitter fall back to no beam would make J3B
+        a strict superset of J1 and destroy the ladder's one-effect-per-rung
+        structure.
+
+        Cost is `n_radio` extra capacity+routing evaluations per step and no
+        extra occlusion, which is ~99 % of the step. 📏 Compute is not a
+        constraint on this project.
+
+        Returns the per-candidate end-to-end capacity `(B, n_radio)`, so a test
+        can check that the selected target really is the argmin.
+        """
+        cfg = self.cfg
+        b, r = cfg.num_envs, cfg.n_radio
+        if cfg.binary_capacity or not cfg.channel_jammer:
+            # The emitter cannot enter capacity at these rungs, so every
+            # candidate is identical and an argmin would pick one arbitrarily.
+            # Hold the MCV rather than emit a silent arbitrary choice.
+            self.jam_target = torch.full_like(self.jam_target, self.mcv_idx)
+            return torch.zeros(b, r, device=self.device)
+
+        # --- what each candidate boresight would deliver, (B, K, R) ---------
+        bearing = self._bearings(radio)
+        gain = self._pattern_db(bearing.unsqueeze(1) - bearing.unsqueeze(2))
+        jam_pl = self._jammer_pathloss_db(radio, channel_clr).unsqueeze(1)
+        jam_mw = channel.dbm_to_mw(JAMMER_DBM + gain - jam_pl) * self.jammer_on[:, None, None]
+
+        # --- the capacity matrix each candidate would produce, (B, K, R, R) --
+        z = radio[..., 2]
+        h_uav = torch.maximum(z.unsqueeze(-1), z.unsqueeze(-2))
+        occluded = channel_clr[:, :r, :r] < 0.0
+        d3d = torch.cdist(radio, radio)
+        pathloss = torch.where(
+            self.is_a2a,
+            channel.pathloss_a2a_db(d3d, occluded),
+            channel.pathloss_a2g_umi_av_db(d3d, h_uav, ~occluded),
+        )
+        prx_dbm = channel.received_power_dbm(self.ptx, pathloss).unsqueeze(1)
+        sinr_db = prx_dbm - channel.mw_to_dbm(jam_mw.unsqueeze(2) + self.noise_mw)
+        cap = channel.capacity_mbps(sinr_db, BANDWIDTH_HZ) * self.no_self
+
+        # --- route each candidate and take the worst for the swarm -----------
+        source = torch.cat([aux["sees_hvt"], torch.zeros_like(aux["sees_hvt"][:, :1])], dim=1)
+        e2e = routing.best_relay_capacity(
+            cap.flatten(0, 1),
+            source.unsqueeze(1).expand(b, r, r).reshape(b * r, r),
+            dst_index=self.mcv_idx,
+            max_hops=r - 1,
+            reuse_limit=cfg.reuse_limit,
+        ).view(b, r)
+
+        best = e2e.argmin(dim=1)
+        # Nothing to break is not a free choice; hold the MCV.
+        self.jam_target = torch.where(
+            e2e.max(dim=1).values > 0.0, best, torch.full_like(best, self.mcv_idx)
+        )
+        # Returned so a test can assert the argmin is the argmin. `_evaluate`
+        # ignores it.
+        return e2e
+
+    def _jammer_pathloss_db(self, radio: Tensor, channel_clr: Tensor) -> Tensor:
+        """`(B, R)` path loss from the emitter to each radio node.
+
+        Factored out because `J3B`'s counterfactual needs it once per step and
+        must not pay for it `n_radio` times. Reads the *channel's* clearance, not
+        the true one, so the emitter's line of sight is modelled at the same
+        fidelity as the links it degrades.
+        """
+        r = self.cfg.n_radio
+        d = (radio - self.hvt_pos.unsqueeze(1)).norm(dim=-1)
+        los = channel_clr[:, :r, self.hvt_idx] >= 0.0
+        return channel.pathloss_a2g_umi_av_db(d, radio[..., 2], los)
+
+    def _bearings(self, radio: Tensor) -> Tensor:
+        """`(B, R)` bearing from the emitter to each radio node, radians."""
+        rel = radio[..., :2] - self.hvt_pos[:, None, :2]
+        return torch.atan2(rel[..., 1], rel[..., 0])
+
+    @staticmethod
+    def _pattern_db(off_rad: Tensor) -> Tensor:
+        """The 3GPP element pattern, given an off-boresight angle in radians."""
+        off = torch.atan2(off_rad.sin(), off_rad.cos())  # wrap to [-pi, pi]
+        theta_deg = off.abs() * (180.0 / math.pi)
+        atten = torch.clamp(12.0 * (theta_deg / JAMMER_BEAMWIDTH_DEG) ** 2, max=JAMMER_MAX_ATTEN_DB)
+        return JAMMER_PEAK_GAIN_DBI - atten
 
     def _beam_gain_db(self, radio: Tensor) -> Tensor:
         """`(B, R)` antenna gain toward each radio node, in dB.
@@ -886,8 +995,7 @@ class BatchedSwarmEnv:
             return torch.zeros(b, r, device=self.device)
 
         # The emitter rides the target, so bearings are measured from the HVT.
-        rel = radio[..., :2] - self.hvt_pos[:, None, :2]
-        bearing = torch.atan2(rel[..., 1], rel[..., 0])  # (B, R)
+        bearing = self._bearings(radio)  # (B, R)
         boresight = torch.gather(bearing, 1, self._jammer_boresight().unsqueeze(1))
         off = bearing - boresight
         # Wrap to [-pi, pi] without a branch.
@@ -921,7 +1029,9 @@ class BatchedSwarmEnv:
             return self.jam_target.new_full((self.cfg.num_envs,), self.mcv_idx)
         return self.jam_target
 
-    def _update_jammer_target(self, aux: dict[str, Tensor]) -> None:
+    def _update_jammer_target(
+        self, aux: dict[str, Tensor], radio: Tensor, channel_clr: Tensor
+    ) -> None:
         """J3's greedy step: aim at **the chain's weakest receiver**.
 
         `PLAN.md` §3 specifies J3 as *"retarget the chain's weakest receiver each
@@ -935,7 +1045,10 @@ class BatchedSwarmEnv:
         selected, which is the geometry that made "point at the observer"
         measure *worse* than isotropic.
         """
-        if self.cfg.jammer != "J3":
+        if self.cfg.jammer not in ("J3", "J3B"):
+            return
+        if self.cfg.jammer == "J3B":
+            self._update_best_response_target(aux, radio, channel_clr)
             return
         on_edge, cap = aux["on_edge"], aux["capacity_mbps"]
         masked = torch.where(on_edge, cap, torch.full_like(cap, float("inf")))
@@ -1075,7 +1188,7 @@ class BatchedSwarmEnv:
         # 🔒 AFTER the snapshot, so J3 aims at THIS chain on the NEXT step. See
         # `_jammer_boresight` for why the latency is required rather than
         # tolerated.
-        self._update_jammer_target(aux)
+        self._update_jammer_target(aux, pos_k[:, : cfg.n_radio], channel_clr)
         return snap, aux
 
     # ------------------------------------------------------------------ #

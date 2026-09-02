@@ -96,3 +96,69 @@ result this project already has: the fidelity ladder is also non-monotone in
 difficulty (F1 is harder than F4). "Adding capability to the adversary does not
 monotonically increase the pressure it applies" is a real and counter-intuitive
 finding about adversarial evaluation.
+
+---
+
+## 📏 J3B built and measured — and it does **not** rescue adaptivity
+
+`J3B` is the exhaustive best response: for each of the `n_radio` candidate
+boresights, recompute what end-to-end capacity *would* be, and take the argmin.
+`test_jammer.py` asserts the selection really is the argmin, and that it is never
+worse than holding the MCV *on the geometry it was given*.
+
+| rung | `mission_capable` | mean e2e | targets chosen (drones … MCV) |
+|---|---|---|---|
+| **J0** none | 60.2 % | 24.0 | — |
+| **J1** isotropic | 54.3 % | 21.1 | — |
+| **J2** beam, fixed on the MCV | **41.8 %** | 15.8 | fixed |
+| **J3** beam, greedy | 44.5 % | 16.7 | 2·3·4·6·4 · **13** |
+| **J3B** beam, best response | **42.2 %** | 15.7 | 1·2·5·7·5 · **12** |
+
+⚠️ B0, CPU, **32 eval episodes, one seed**. A smoke measurement. The *ordering*
+is what is reported, not the levels.
+
+## ☠️ Adaptivity does not help this adversary. At all.
+
+The strongest rung is **J2 — the one that does not adapt.** A per-step best
+response ties it (42.2 % against 41.8 %) and the greedy heuristic is 2.7 pp
+worse. That is not a bug in J3B: it provably picks the argmin of end-to-end
+capacity every step, and it selects the MCV only 12 times in 32 — so it is
+genuinely exploiting the freedom and gaining nothing for it.
+
+🔍 **The mechanism is myopia, not latency.** At 1 km an aiming lag of one 0.4 s
+tick is ~0.6° of bearing against a 25° beamwidth — negligible. What is not
+negligible is that **a one-step best response is not an optimal adversary against
+an opponent that adapts.** B0 hill-climbs on observable clearance and capacity,
+so a jammer that re-optimises every step hands it a *moving* problem it can track,
+while a beam parked on the MCV forces a **persistent** detour. Committing beats
+re-optimising. This is the classic gap between greedy and optimal play in a
+repeated game, and here it is worth ~0 to 3 pp.
+
+### ⛔ What this does to the thesis, stated plainly
+
+`PLAN.md`'s reframe is: *"how far does each policy degrade when the adversary
+adapts to it?"* — and the answer so far is **that adaptation, as specified, does
+not increase adversarial pressure**. Gate B's exploitability gap would then be
+measuring a beam, not an adaptation, and the J2 control row exists precisely to
+catch that.
+
+⚠️ **This does not sink the thesis, and it changes what J4 is for.** `PLAN.md`
+lists J4 (a *learned* jammer) as "the stretch" and explicitly **not
+load-bearing**, on the reasoning that J3 already extracts the full 11 pp. 📏 That
+reasoning rested on the inherited probe's 47.7 %, which is now shown to belong to
+an adversary no stronger than a fixed beam. **A learned, non-myopic adversary is
+therefore no longer optional** — it is the only rung left that could make
+"adaptive" mean something, because it is the only one that can *commit* to a
+strategy over time rather than re-optimise each step.
+
+🔒 **Before anything is concluded, this needs 5 seeds on CUDA.** The J2/J3B gap is
+0.4 pp on 32 episodes and one seed; the J2/J3 gap is 2.7 pp on the same. Neither
+is a finding yet. The commands are in the session notes; nothing downstream runs
+until they are measured properly.
+
+📏 Worth noting either way: this is the **second** non-monotone ladder in this
+project. The fidelity ladder is non-monotone in difficulty (F1 harder than F4)
+and the adversary ladder is non-monotone in pressure. *"Adding capability to a
+component does not monotonically increase its effect"* is becoming a theme rather
+than an oddity, and it is a genuinely useful caution about how ablation ladders
+are read.

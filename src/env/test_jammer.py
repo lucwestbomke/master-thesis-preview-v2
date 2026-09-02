@@ -36,11 +36,13 @@ from .core import (
 RUNGS = ("J0", "J1", "J2", "J3")
 
 
-def make(jammer="J1", num_envs=4, seed=0, **kw) -> BatchedSwarmEnv:
+def make(jammer="J1", num_envs=4, seed=0, fidelity="F4", **kw) -> BatchedSwarmEnv:
     kw.setdefault("stage_weights", (0.0, 0.0, 0.0, 1.0))
     kw.setdefault("compile_occlusion", False)
     env = BatchedSwarmEnv(
-        EnvConfig(num_envs=num_envs, num_drones=5, seed=seed, fidelity="F4", jammer=jammer, **kw)
+        EnvConfig(
+            num_envs=num_envs, num_drones=5, seed=seed, fidelity=fidelity, jammer=jammer, **kw
+        )
     )
     env.reset()
     return env
@@ -255,3 +257,51 @@ def test_the_jammer_reaches_the_sinr_denominator_at_the_receiver():
         "an emitter must never RAISE a link's capacity"
     )
     assert (al["capacity_mbps"] < aq["capacity_mbps"] - 1e-4).any()
+
+
+# --------------------------------------------------------------------------- #
+# J3B -- the exhaustive best response
+# --------------------------------------------------------------------------- #
+
+
+def test_j3b_selects_the_argmin_of_end_to_end_capacity():
+    """The defining property, checked against the quantity it optimises rather
+    than against a re-implementation of it."""
+    env = make("J3B", num_envs=8)
+    fly(env, 40)
+
+    pos_k = torch.cat([env.drone_pos, env.mcv_pos.unsqueeze(1), env.hvt_pos.unsqueeze(1)], dim=1)
+    _true, chan = env._clearance(pos_k)
+    _snap, aux = env._evaluate()
+    e2e = env._update_best_response_target(aux, pos_k[:, : env.cfg.n_radio], chan)
+
+    for b in range(8):
+        if float(e2e[b].max()) <= 0.0:
+            assert int(env.jam_target[b]) == env.mcv_idx  # nothing to break
+            continue
+        chosen = float(e2e[b, int(env.jam_target[b])])
+        assert chosen == pytest.approx(float(e2e[b].min()), abs=1e-4), (b, chosen, e2e[b].tolist())
+
+
+def test_j3b_is_at_least_as_damaging_as_holding_the_mcv():
+    """🔒 The property that makes it a *best response* rather than a heuristic:
+    it can never do worse than the fixed target J2 uses, on the geometry it was
+    given. ⚠️ This is a statement about the one-step counterfactual only -- over
+    a full episode a committed adversary can still beat a myopic one, which is
+    exactly what `results/j_ladder.md` measures."""
+    env = make("J3B", num_envs=8)
+    fly(env, 40)
+    pos_k = torch.cat([env.drone_pos, env.mcv_pos.unsqueeze(1), env.hvt_pos.unsqueeze(1)], dim=1)
+    _true, chan = env._clearance(pos_k)
+    _snap, aux = env._evaluate()
+    e2e = env._update_best_response_target(aux, pos_k[:, : env.cfg.n_radio], chan)
+    live = e2e.max(dim=1).values > 0.0
+    assert (e2e.min(dim=1).values[live] <= e2e[live, env.mcv_idx] + 1e-4).all()
+
+
+def test_j3b_holds_the_mcv_where_the_emitter_cannot_enter_capacity():
+    """⛔ At a binary rung every candidate is identical, so an argmin would emit a
+    silent arbitrary choice. Hold the MCV instead."""
+    env = make("J3B", num_envs=4, fidelity="F1")
+    fly(env, 20)
+    assert torch.equal(env.jam_target, torch.full((4,), env.mcv_idx))
