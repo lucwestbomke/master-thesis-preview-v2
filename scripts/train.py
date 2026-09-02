@@ -122,8 +122,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
-    ap.add_argument("--jammer", default="J1", choices=["J0", "J1", "J2", "J3", "J3B"],
-                    help="the adversary rung the policy TRAINS under, PLAN.md §3")
+    ap.add_argument(
+        "--jammer",
+        default="J1",
+        choices=["J0", "J1", "J2", "J3", "J3B"],
+        help="the adversary rung the policy TRAINS under, PLAN.md §3",
+    )
     ap.add_argument(
         "--action-space",
         default="acceleration",
