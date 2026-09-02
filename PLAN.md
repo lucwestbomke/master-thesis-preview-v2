@@ -141,8 +141,8 @@ degrades control?** Push the INT8 policy through the same harness and compare
 ## 3. The premise: B0 wins the static task, and the axis is closed
 
 This section exists so that nobody — including a future reader of this repo —
-re-opens it. **Four independent lines of evidence**, and the fourth is
-structural rather than empirical.
+re-opens it. **Five independent lines of evidence**; the fourth is structural
+rather than empirical, and the fifth closes the memory hypothesis with a bound.
 
 ### 📏 1. The gap is `observed`, and nothing else
 
@@ -258,6 +258,39 @@ reason than "we tried eight things", and it redirects the search to the critic
 and the advantage, neither of which has been touched. ⛔ That is not a licence for
 a ninth intervention: anything built on it needs its own gate, declared before
 its own run, at 5 seeds, judged on the worst.
+
+### 📏 5. And it is not memory either — perfect target information is worth −0.4 pp
+
+Measured 2026-09-02, [`results/memory_horizon.md`](results/memory_horizon.md).
+
+B0 carries a target-belief filter with dead reckoning and the actors cannot
+represent one, which looked like a structural disadvantage. 📏 It is not:
+
+| policy | mission-capable |
+|---|---|
+| `B0-geodesic` — roles by index, **no belief filter** | 47.1 % [3.1] |
+| **`B0`** — ranked roles + belief + spare posts + link repair | **57.2 % [3.5]** |
+| `B0-oracle` — **+ ground-truth target state** | 56.8 % [3.2] |
+
+🔒 **`B0` → `B0-oracle` is −0.4 pp**, and that is a *hard upper bound on memory*:
+any belief filter or recurrent state can at best reconstruct an estimate of target
+state, while the oracle **is** target state. ⛔ Memory cannot be worth more than
+the oracle, and the oracle is worth nothing measurable.
+
+📏 An independent measurement agrees. Unseen runs preceded by a sighting — the only
+intervals a belief could bridge — are **p50 ~35 steps, p90 ~320**, and the target
+has moved **~85 m** by the time the gap closes, against B0's own 89 m stand-off.
+Frame stacking at k=8 covers 21 % of gaps but **0.9 % of blind time**. Both
+branches that would have justified building something fail.
+
+🔍 **So B0's +10.1 pp over `B0-geodesic` is not its memory — it is ranked roles.**
+Which is exactly the capability §3.4 measures the learned policy as structurally
+unable to express. The two findings converge on one deficit, not two.
+
+⛔ **Do not rebuild recurrence for target memory.** ⚠️ The G8 recurrence test *was*
+confounded (frozen critic, and `grad_norm_clip` applied jointly under a GRU), and
+that objection stands as method — it is simply aimed at a quantity bounded above
+by 0.4 pp.
 
 ### 🔧 The one remaining probe, and it is timeboxed to one week
 
