@@ -108,6 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--timesteps", type=int, default=12_000_000)
     ap.add_argument("--num-drones", type=int, default=5)
+    ap.add_argument(
+        "--init-from",
+        type=Path,
+        default=None,
+        help="start the ACTOR from this checkpoint instead of a fresh init -- the "
+        "seam scripts/bc_init.py's behaviour clone plugs into. ⛔ The CRITIC is "
+        "always fresh: a critic fitted to the teacher's returns is not the critic "
+        "PPO needs, and loading one would silently start training with a value "
+        "function for a different policy. ⚠️ A run started this way has seen a "
+        "scripted teacher and is a PROBE, not a like-for-like RQ2 or Gate B arm",
+    )
     ap.add_argument("--seeds", nargs="+", type=int, default=[0])
     ap.add_argument(
         "--init-seed",
@@ -259,6 +270,18 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         initial_log_std=a.initial_log_std,
         min_log_std=a.min_std,
     ).to(a.device)
+    init_from = None
+    if a.init_from is not None:
+        blob = torch.load(a.init_from, map_location=a.device, weights_only=False)
+        if blob["architecture"] != a.arch:
+            raise SystemExit(
+                f"--init-from is a {blob['architecture']!r} checkpoint but --arch is "
+                f"{a.arch!r}; loading it would score a different network"
+            )
+        actor.load_state_dict(blob["policy"])
+        init_from = {"path": str(a.init_from), **blob.get("provenance", {})}
+        print(f"    actor initialised from {a.init_from} (critic is fresh)")
+
     critic = SwarmCritic(env.cfg.state_dim, hidden=a.critic_hidden).to(a.device)
 
     ppo = PPOConfig(
@@ -309,6 +332,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "entropy_loss_scale": a.entropy,
         "shuffle_minibatches": not a.no_shuffle,
         "value_clip": a.value_clip,
+        "init_from": init_from,
         "actor_params": parameter_count(actor),
         "critic_params": parameter_count(critic),
         "weights": dataclasses.asdict(weights),
