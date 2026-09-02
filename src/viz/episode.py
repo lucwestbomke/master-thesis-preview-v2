@@ -225,7 +225,7 @@ def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
         return lambda _obs: waypoint_policy(env)
 
     variant = {"b0": "b0", "b0-geodesic": "geodesic", "b0-oracle": "oracle"}[name]
-    pol = B0Policy(1, n, variant=variant, device=env.device)
+    pol = B0Policy(1, n, variant=variant, device=env.device, action_space=env.cfg.action_space)
     pol.reset()
 
     def act(obs):

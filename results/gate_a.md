@@ -155,3 +155,76 @@ confound the two changes, and a win could be entirely the exploration.
 
 ⛔ Gate A's original bars are unchanged: speed cap < 20 % **and** boundary < 5 %,
 on the deterministic policy, eval split.
+
+---
+
+## 📏 The exploration follow-up — measured. ⛔ Gate A still fails, differently.
+
+| condition | per seed | median | `observed` | `observer_range` | > 24 m/s | at boundary |
+|---|---|---|---|---|---|---|
+| **acceleration**, sigma 0.61 | 36.5 · 38.9 · 39.8 · 41.3 · 45.8 | **39.8 %** | 59.6 % | 219 m | 10.8 / 26.1 % | 19.7 / 14.5 % |
+| velocity, sigma 0.61 | 10.8 · 18.6 · 21.5 · 24.8 · 32.1 | 21.5 % | 40.2 % | 382 m | **0.1 / 0.4 %** | **41.6 / 72.6 %** |
+| velocity, **sigma 1.35** | 20.4 · 21.2 · 22.8 · 23.9 · 26.4 | **22.8 %** | 56.3 % | 257 m | **69.9 / 62.5 %** | 20.0 / 26.7 % |
+
+More exploration **tightened the spread** (10.8–32.1 → 20.4–26.4) and restored
+`observed` and `observer_range` toward the control — but moved the median by only
+**+1.3 pp**, and **traded one Gate A pathology for the other**: boundary occupancy
+fell 72.6 → 26.7 % while speed-cap occupancy rose 0.4 → 62.5 %. Both bars still
+fail. ⛔ **Gate A is not met at either exploration level.**
+
+🔒 **The primary comparison was never confounded.** The 2x2's missing cell
+(acceleration at sigma 1.35) is not needed for the verdict: acceleration 39.8 %
+and velocity 21.5 % are **both at sigma 0.61**, which is already matched. The
+sigma 1.35 arm was a rescue attempt for velocity and it did not rescue it.
+
+## ☠️ A methodological finding that affects every learned number in this project
+
+📏 The same velocity/sigma-1.35 policy, measured two ways:
+
+| | training (**sampled** actions) | evaluation (**the mean**) |
+|---|---|---|
+| speed p50 | ~14.4 m/s | **24.79 m/s** |
+| steps > 24 m/s | **1.3 %** | **69.9 %** |
+| steps at boundary | 8.2 % | 20.0 % |
+
+**A 54x discrepancy on the same policy.** `eval_policy.py` reports the Gaussian's
+**mean**, correctly and deliberately — *"evaluating a stochastic policy by
+sampling would report the exploration noise as part of the result"*. But at
+`sigma = 1.08` the mean is **not the behaviour that was optimised**: the sampled
+action is dominated by noise and clipped by the env, so the mean can drift to
+saturation without the training behaviour changing. The policy that gets
+deployed is then a policy that never ran.
+
+⚠️ **This is the mirror image of skrl's `clip_actions` bug.** There the *density*
+did not match the action that was taken; here the *evaluated policy* does not
+match the behaviour that was trained. Both are silent, and both are only visible
+if you measure the same policy two ways.
+
+🔒 **Consequence, and it is general:** a `mission_capable` number is only
+trustworthy while sigma is small enough that the mean represents the behaviour.
+At sigma 0.49–0.61 (every other result in this project) it does — training and
+eval speed p50 agree to ~2 m/s. Above sigma ~1 it does not. ⛔ Do not raise
+`initial_log_std` above ~0 without reporting the sampled-vs-mean gap alongside.
+
+## Verdict, and what ships
+
+⛔ **Velocity setpoints do not ship.** `EnvConfig.action_space` now defaults to
+`"acceleration"`, with `"velocity"` retained behind the flag and exercised by
+tests on both branches. A rung you delete is a result you can no longer state,
+and **C3 is now a comparison rather than a switch**.
+
+✅ **C3 becomes a negative result with a mechanism**, which is worth more than the
+switch would have been:
+
+> Velocity setpoints are the interface MAVLink actually consumes, and they
+> eliminate the speed-saturation pathology outright — steps at the dash cap fall
+> from an inherited 57 % to **0.4 %**. But they cost **18.3 pp** of mission
+> capability with disjoint seed ranges, and quadruple boundary occupancy, because
+> the environment zeroes the velocity component that hits a limit and an
+> interface whose exploration noise does **not accumulate** cannot reliably
+> escape the resulting absorbing region. Restoring escape by raising exploration
+> re-creates the saturation the interface removed.
+
+⛔ **Stop sweeping this axis.** Two pre-declared attempts, two failures, one
+mechanism identified. Continuing to tune sigma is the "always one more thing to
+try" failure this project has been warned about. The adversary is the thesis.

@@ -123,6 +123,7 @@ def make_env(a, seed: int, num_drones: int) -> BatchedSwarmEnv:
             device=a.device,
             seed=seed,
             fidelity=a.fidelity,
+            action_space=a.action_space,
             eval_routes=not a.train_routes,
             auto_reset=False,  # one episode per environment: clean metric rows
             stage_weights=weights,
@@ -172,7 +173,7 @@ def score(a, name: str, checkpoint: Path | None, num_drones: int) -> dict[str, l
                 return torch.empty(_b, _n, 3, device=_env.device).uniform_(-1, 1, generator=_gen)
 
         elif name == "b0":
-            pol = B0Policy(b, n, variant="b0", device=env.device)
+            pol = B0Policy(b, n, variant="b0", device=env.device, action_space=env.cfg.action_space)
             on_reset = pol.reset
 
             def policy(obs, _pol=pol):
@@ -212,6 +213,7 @@ def main() -> None:
     ap.add_argument("checkpoints", nargs="*", type=Path)
     ap.add_argument("--policy", nargs="*", default=[], choices=["random", "b0"])
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
+    ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--stage", type=int, default=4, help="curriculum stage to evaluate at")
     ap.add_argument("--n", nargs="*", type=int, default=[5], help="swarm sizes (zero-shot)")
     ap.add_argument("--seeds", type=int, default=5)

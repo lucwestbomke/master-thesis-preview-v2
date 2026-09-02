@@ -312,6 +312,15 @@ class EnvConfig:
     # `channel_occlusion=False, channel_jammer=True` is not a rung on the
     # ladder, nothing would stop it running, and the number it produced would go
     # into a table -- docs/BLOCK_F.md decision 5.
+    #: 🔒 **`"acceleration"` ships, and that is a measured decision, not inertia.**
+    #: `docs/REDUCTION.md` task 1 built the velocity setpoint interface and
+    #: `results/gate_a.md` records Gate A rejecting it: at matched exploration it
+    #: costs **18.3 pp** with disjoint seed ranges (21.5 % against 39.8 %) and
+    #: quadruples boundary occupancy. It is kept, not deleted, because C3 is
+    #: reported as a *comparison* and a rung you delete is a result you can no
+    #: longer state.
+    action_space: Literal["acceleration", "velocity"] = "acceleration"
+
     fidelity: Fidelity = "F4"
     # `R` for the binary rungs. Measured, not chosen: scripts/calibrate_r.py,
     # and `test_fidelity.py` pins this default against what that script reports.
@@ -670,19 +679,21 @@ class BatchedSwarmEnv:
         inherited B0 number valid. A norm limit would be marginally more physical
         and would silently move the baseline.
         """
-        want_vel = actions.clamp(-1.0, 1.0) * DRONE_DASH_MS
-        # Cap the SETPOINT first: a diagonal command must not ask for more than
-        # the dash speed just because each axis is within it.
-        speed = want_vel.norm(dim=-1, keepdim=True)
-        want_vel = want_vel * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)
-
-        # The airframe tracks the setpoint, rate-limited by its accel envelope.
-        dv_max = MAX_ACCEL_MS2 * self.cfg.dt_s
-        dv = (want_vel - self.drone_vel).clamp(-dv_max, dv_max)
+        if self.cfg.action_space == "velocity":
+            want_vel = actions.clamp(-1.0, 1.0) * DRONE_DASH_MS
+            # Cap the SETPOINT first: a diagonal command must not ask for more
+            # than the dash speed just because each axis is within it.
+            speed = want_vel.norm(dim=-1, keepdim=True)
+            want_vel = want_vel * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)
+            # The airframe tracks the setpoint, rate-limited by its envelope.
+            dv = (want_vel - self.drone_vel).clamp(
+                -MAX_ACCEL_MS2 * self.cfg.dt_s, MAX_ACCEL_MS2 * self.cfg.dt_s
+            )
+            accel = dv / self.cfg.dt_s
+        else:
+            accel = actions.clamp(-1.0, 1.0) * MAX_ACCEL_MS2
+            dv = accel * self.cfg.dt_s
         vel = self.drone_vel + dv
-        # Realised acceleration, for the energy model and the effort term. As
-        # before, this is the command after limiting and before the speed cap.
-        accel = dv / self.cfg.dt_s
 
         speed = vel.norm(dim=-1, keepdim=True)
         vel = vel * (DRONE_DASH_MS / speed.clamp_min(1e-6)).clamp(max=1.0)

@@ -116,7 +116,7 @@ def bank_states(
             return torch.empty(b, n, 3, device=env.device).uniform_(-1, 1, generator=gen)
 
     elif policy_name == "b0":
-        pol = B0Policy(b, n, variant="b0", device=env.device)
+        pol = B0Policy(b, n, variant="b0", device=env.device, action_space=env.cfg.action_space)
         on_reset = pol.reset
         on_reset(torch.ones(b, dtype=torch.bool, device=env.device))
 
@@ -475,6 +475,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--stage", type=int, default=4)
     ap.add_argument("--fidelity", default="F4")
+    ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
+    ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--train-routes", action="store_true")
     ap.add_argument(
         "--bank-dir",
@@ -512,6 +514,7 @@ def main() -> None:
                 seed=a.seed,
                 stage=a.stage,
                 fidelity=a.fidelity,
+                action_space=a.action_space,
                 train_routes=a.train_routes,
             )
             bank = {k: v.cpu() for k, v in bank.items()}

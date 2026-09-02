@@ -113,7 +113,7 @@ def edge_class_split(envs: int, drones: int, steps: int, seed: int):
     )
     r = env.cfg.n_radio
     obs = env.reset()
-    pol = B0Policy(envs, drones, variant="b0", device=env.device)
+    pol = B0Policy(envs, drones, variant="b0", device=env.device, action_space=env.cfg.action_space)
     a2a = a2g = 0
     for _ in range(steps):
         obs, _rew, _term, _trunc, ex = env.step(pol.act(obs["flat"]))
@@ -147,7 +147,9 @@ def sweep(values: list[float], envs: int, drones: int, seed: int):
                     stage_weights=(0.0, 0.0, 0.0, 1.0),
                 )
             )
-            pol = B0Policy(envs, drones, variant="b0", device=env.device)
+            pol = B0Policy(
+                envs, drones, variant="b0", device=env.device, action_space=env.cfg.action_space
+            )
             m = rollout(
                 env,
                 lambda o, _p=pol: _p.act(o["flat"]),

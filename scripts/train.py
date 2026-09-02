@@ -123,6 +123,15 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
     ap.add_argument(
+        "--action-space",
+        default="acceleration",
+        choices=["acceleration", "velocity"],
+        help="📏 `acceleration` ships. Gate A rejected velocity setpoints "
+        "(results/gate_a.md): 21.5 %% against 39.8 %% at matched exploration, "
+        "with disjoint seed ranges, and boundary occupancy 14.5-19.7 %% -> "
+        "41.6-72.6 %%. Kept so C3 is reported as a comparison",
+    )
+    ap.add_argument(
         "--eval-routes",
         action="store_true",
         help="⛔ train on the HELD-OUT routes. Never do this for a reported run",
@@ -225,6 +234,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
             device=str(a.device),
             seed=seed,
             fidelity=a.fidelity,
+            action_space=a.action_space,
             eval_routes=a.eval_routes,
             auto_reset=True,
             training_extras=True,  # 🔒 the truncation bootstrap needs final_state
@@ -282,6 +292,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "epochs": a.epochs,
         "timesteps": a.timesteps,
         "fidelity": a.fidelity,
+        "action_space": a.action_space,
         "split": "eval" if a.eval_routes else "train",
         "curriculum": not a.no_curriculum,
         "stage": None if not a.no_curriculum else a.stage,

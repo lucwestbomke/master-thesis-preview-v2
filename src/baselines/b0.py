@@ -62,6 +62,7 @@ from ..env.core import (
     DRONE_CRUISE_MS,
     DRONE_DASH_MS,
     DT_S,
+    MAX_ACCEL_MS2,
     POS_SCALE_M,
     VEL_SCALE_MS,
     neighbour_index_table,
@@ -148,6 +149,7 @@ class B0Policy:
         device: torch.device | str = "cpu",
         cfg: B0Config | None = None,
         dt_s: float = DT_S,
+        action_space: str = "acceleration",
         **overrides: float,
     ):
         if variant not in VARIANTS:
@@ -156,6 +158,7 @@ class B0Policy:
         self.cfg = replace(cfg or B0Config(), **overrides) if overrides else (cfg or B0Config())
         self.num_envs, self.num_drones = num_envs, num_drones
         self.dt = dt_s
+        self.action_space = action_space
         dev = torch.device(device)
         self.device = dev
 
@@ -267,7 +270,7 @@ class B0Policy:
         self._update_repair(station, clr_mcv, edge_clr, edge_cap, nb_onpath, rank, n_relay)
 
         delta = torch.cat([station, (ALT_MAX_M - own_alt).unsqueeze(-1)], dim=-1)
-        return self._velocity_command(delta)
+        return self._velocity_command(delta, own_vel)
 
     # ------------------------------------------------------------------ #
     # Target belief
@@ -521,7 +524,7 @@ class B0Policy:
 
     # ------------------------------------------------------------------ #
 
-    def _velocity_command(self, delta: Tensor) -> Tensor:
+    def _velocity_command(self, delta: Tensor, own_vel: Tensor) -> Tensor:
         """Proportional position→velocity law, emitted as a velocity setpoint.
 
         🔒 **This used to end with an inner loop and no longer does.** Under the
@@ -561,6 +564,11 @@ class B0Policy:
         )
         speed = want.norm(dim=-1, keepdim=True).clamp_min(1e-6)
         want = want * (v_max / speed).clamp(max=1.0)
-        # `v_max <= DRONE_DASH_MS`, so this never actually clips; the clamp is
-        # the contract with `core._advance_drones`, not a limiter.
-        return (want / DRONE_DASH_MS).clamp(-1.0, 1.0)
+        if self.action_space == "velocity":
+            # `v_max <= DRONE_DASH_MS`, so this never actually clips; the clamp
+            # is the contract with `core._advance_drones`, not a limiter.
+            return (want / DRONE_DASH_MS).clamp(-1.0, 1.0)
+        # The proportional velocity servo, for the acceleration action space.
+        # 🔒 Exactly equivalent to the branch above under `core`'s per-component
+        # rate limit -- `test_core.py` pins it.
+        return ((want - own_vel) / (MAX_ACCEL_MS2 * self.dt)).clamp(-1.0, 1.0)

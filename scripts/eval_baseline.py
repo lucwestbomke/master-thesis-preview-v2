@@ -90,7 +90,9 @@ def run(name: str, env: BatchedSwarmEnv, cfg: B0Config | None = None):
         return rollout(env, lambda _obs: waypoint_policy(env), EPISODE_STEPS)
 
     variant = "b0" if name == "b0" else ("geodesic" if name == "geodesic" else "oracle")
-    pol = B0Policy(b, n, variant=variant, device=env.device, cfg=cfg)
+    pol = B0Policy(
+        b, n, variant=variant, device=env.device, cfg=cfg, action_space=env.cfg.action_space
+    )
 
     def policy(obs):
         truth = None
@@ -146,7 +148,9 @@ def sec_phase(a) -> None:
     buckets = 12
     per = EPISODE_STEPS / buckets
     env = make_env(a.num_envs, a.num_drones, 100, True, a.compile)
-    pol = B0Policy(a.num_envs, a.num_drones, variant="b0", device=env.device)
+    pol = B0Policy(
+        a.num_envs, a.num_drones, variant="b0", device=env.device, action_space=env.cfg.action_space
+    )
     obs = env.reset()
     pol.reset()
     cap = torch.zeros(buckets)

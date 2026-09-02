@@ -109,7 +109,9 @@ def make_policy(name: str, env: BatchedSwarmEnv):
         return act, None
     if name == "waypoint":
         return (lambda _obs: waypoint_policy(env)), None
-    pol = B0Policy(b, n, variant="b0", device=env.device, cfg=B0Config())
+    pol = B0Policy(
+        b, n, variant="b0", device=env.device, cfg=B0Config(), action_space=env.cfg.action_space
+    )
     return (lambda obs: pol.act(obs["flat"])), pol.reset
 
 

@@ -147,12 +147,33 @@ def test_positions_stay_in_the_box_and_the_altitude_band():
         assert env.drone_pos[..., 2].max() <= ALT_MAX_M + 1e-4
 
 
+def test_the_shipped_action_space_is_acceleration():
+    """🔒 Gate A rejected velocity setpoints (`results/gate_a.md`): at matched
+    exploration they cost 18.3 pp with disjoint seed ranges and quadrupled
+    boundary occupancy. The default is the measured decision, and this pins it so
+    a later edit cannot flip the shipped condition without failing a test."""
+    assert EnvConfig(num_envs=1).action_space == "acceleration"
+
+    env = make(num_envs=2, no_buildings=True)
+    a = zeros_like_actions(env)
+    a[..., 0] = 1.0
+    env.step(a)
+    # acceleration semantics: one tick integrates a*dt into velocity
+    want = MAX_ACCEL_MS2 * env.cfg.dt_s
+    assert torch.allclose(
+        env.drone_vel[..., 0], torch.full_like(env.drone_vel[..., 0], want), atol=1e-4
+    )
+    # ...and a HELD action keeps integrating, which is what a setpoint does not do
+    env.step(a)
+    assert float(env.drone_vel[..., 0].min()) > want * 1.9
+
+
 def test_the_action_is_a_velocity_setpoint_the_airframe_closes_on():
     """🔒 `docs/REDUCTION.md` task 1. Holding a constant action must drive the
     drone to that velocity and hold it there -- the defining property of a
     setpoint interface, and the thing an acceleration interface does NOT do
     (there, a held action integrates without bound until the speed cap)."""
-    env = make(num_envs=2, no_buildings=True)
+    env = make(num_envs=2, no_buildings=True, action_space="velocity")
     a = zeros_like_actions(env)
     a[..., 0] = 0.4  # ask for 40 % of dash along +x, and nothing else
 
@@ -172,7 +193,7 @@ def test_the_action_is_a_velocity_setpoint_the_airframe_closes_on():
 def test_the_airframe_rate_limit_still_binds():
     """The accel envelope is kept as a property of the airframe. Without it a
     drone could reverse from +25 to -25 m/s inside one 0.4 s tick."""
-    env = make(num_envs=2, no_buildings=True)
+    env = make(num_envs=2, no_buildings=True, action_space="velocity")
     a = zeros_like_actions(env)
     a[..., 0] = 1.0
     env.step(a)
@@ -192,7 +213,7 @@ def test_zero_action_means_stop_rather_than_coast():
     rest within the rate limit. Under acceleration control, zero meant *coast*,
     and a policy had to actively brake -- which is the inner loop B0 had and the
     learner did not."""
-    env = make(num_envs=2, no_buildings=True)
+    env = make(num_envs=2, no_buildings=True, action_space="velocity")
     a = zeros_like_actions(env)
     a[..., 0] = 1.0
     for _ in range(20):

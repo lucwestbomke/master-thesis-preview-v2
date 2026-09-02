@@ -88,7 +88,12 @@ def make_env(
 
 def run_b0(env: BatchedSwarmEnv, steps: int):
     pol = B0Policy(
-        env.cfg.num_envs, env.cfg.num_drones, variant="b0", device=env.device, cfg=B0Config()
+        env.cfg.num_envs,
+        env.cfg.num_drones,
+        variant="b0",
+        device=env.device,
+        cfg=B0Config(),
+        action_space=env.cfg.action_space,
     )
     return rollout(env, lambda obs: pol.act(obs["flat"]), steps, on_reset=pol.reset)
 
