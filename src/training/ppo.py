@@ -332,7 +332,15 @@ class PPOTrainer:
         the intervention; both are recorded as nulls in `docs/INHERITED.md`.
         """
         b, n = self.env.cfg.num_envs, self.env.cfg.num_drones
-        flat = obs["flat"].reshape(b * n, -1)
+        # 🔒 `flat_history` when the env stacks frames, `flat` otherwise. The
+        # actor was built for whichever this env produces (`scripts/train.py`
+        # passes `obs_history` to both), so a mismatch is a construction error
+        # and not something to paper over here.
+        key = "flat_history" if "flat_history" in obs else "flat"
+        # Flattened to `(rows, k * FLAT_DIM)`: the rollout buffer, the minibatch
+        # indexing and an ONNX export all want a plain 2-D input, so the actor --
+        # not the trainer -- owns the unflatten back to `(rows, k, FLAT_DIM)`.
+        flat = obs[key].reshape(b * n, -1)
         state = obs["state"].unsqueeze(1).expand(b, n, -1).reshape(b * n, -1)
         return flat, state
 
@@ -630,6 +638,10 @@ class PPOTrainer:
                 "value": self.critic.state_dict(),
                 "architecture": self.actor.architecture,
                 "hidden": self.actor.trunk.out_dim,
+                # 🔒 Top level, not buried in provenance: a loader that misses it
+                # builds an actor of the wrong input width and either crashes or
+                # -- worse -- silently scores a different network.
+                "obs_history": getattr(self.actor, "obs_history", 1),
                 "min_log_std": self.actor.min_log_std,
                 "timestep": self.timestep,
                 **(extra or {}),

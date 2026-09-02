@@ -126,6 +126,7 @@ def make_env(a, seed: int, num_drones: int) -> BatchedSwarmEnv:
             action_space=a.action_space,
             jammer=a.jammer,
             eval_routes=not a.train_routes,
+            obs_history=a.obs_history,
             auto_reset=False,  # one episode per environment: clean metric rows
             stage_weights=weights,
             compile_occlusion=a.device != "cpu",
@@ -152,7 +153,13 @@ def load_actor(path: Path, env: BatchedSwarmEnv) -> tuple[SwarmActor, dict]:
         architecture=blob["architecture"],
         hidden=blob.get("hidden"),
         min_log_std=blob.get("min_log_std", -20.0),
+        obs_history=blob.get("obs_history", 1),
     ).to(env.device)
+    if blob.get("obs_history", 1) != env.cfg.obs_history:
+        raise SystemExit(
+            f"checkpoint wants obs_history={blob.get('obs_history', 1)} but the env has "
+            f"{env.cfg.obs_history}; scoring it would feed the actor the wrong input width"
+        )
     actor.load_state_dict(blob["policy"])
     actor.eval()
     return actor, blob
@@ -188,7 +195,8 @@ def score(a, name: str, checkpoint: Path | None, num_drones: int) -> dict[str, l
                 # The deterministic action: the Gaussian's mean, not a sample.
                 # Evaluating a stochastic policy by sampling would report the
                 # exploration noise as part of the result.
-                mean, _ = _actor(obs["flat"].reshape(_b * _n, -1))
+                key = "flat_history" if "flat_history" in obs else "flat"
+                mean, _ = _actor(obs[key].reshape(_b * _n, -1))
                 return mean.view(_b, _n, 3)
 
         metrics: RolloutMetrics = rollout(env, policy, steps, on_reset=on_reset)
@@ -225,6 +233,14 @@ def main() -> None:
     )
     ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--stage", type=int, default=4, help="curriculum stage to evaluate at")
+    ap.add_argument(
+        "--obs-history",
+        type=int,
+        default=1,
+        help="frames of observation history the env supplies (1 = off, the default). "
+        "⛔ Must match the checkpoint: `load_actor` refuses a mismatch rather than "
+        "scoring an actor at the wrong input width",
+    )
     ap.add_argument("--n", nargs="*", type=int, default=[5], help="swarm sizes (zero-shot)")
     ap.add_argument("--seeds", type=int, default=5)
     ap.add_argument("--num-envs", type=int, default=64)

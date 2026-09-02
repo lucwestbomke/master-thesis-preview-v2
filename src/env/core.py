@@ -422,6 +422,19 @@ class EnvConfig:
     #
     # Neither feeds anything the env computes; both cost one extra pass over
     # already-computed tensors, which is noise against occlusion.
+    #: Frames of observation history the actor receives, as `obs["flat_history"]`
+    #: shaped `(B, N, k, FLAT_DIM)`. 🔒 `1` is off and is the default: `flat` is
+    #: untouched at any setting, so B0 and `test_golden.py` never see this.
+    #:
+    #: 📏 Motivated by a measured 6.9 pp: `results/b0_ablation.md` shows local link
+    #: repair is the largest single component of B0's design advantage, and
+    #: `_update_repair` is a gradient-free hill climb carrying **one step** of
+    #: search state (`prev_score`, `lat_dir`). A policy that sees the previous
+    #: frame can form the same difference; one that sees only the current frame
+    #: cannot. ⛔ Not the target memory `results/memory_horizon.md` closed -- that
+    #: needed a 320-step horizon and was worth ~0.
+    obs_history: int = 1
+
     training_extras: bool = False
 
     def __post_init__(self) -> None:
@@ -504,6 +517,12 @@ class BatchedSwarmEnv:
         self.device = dev
         self.craft: Rotorcraft = DEFAULT_AIRFRAME
         self.gen = torch.Generator(device=dev).manual_seed(cfg.seed)
+
+        # Observation history ring, `(B, N, k, FLAT_DIM)`. Allocated even at k=1
+        # so the shape is static; `_observe` only reads it when k > 1.
+        self._flat_hist = torch.zeros(
+            cfg.num_envs, cfg.num_drones, max(cfg.obs_history, 1), FLAT_DIM, device=dev
+        )
 
         art = np.load(artefact)
         self.boxes = torch.from_numpy(art["building_boxes"]).float().to(dev)
@@ -694,7 +713,11 @@ class BatchedSwarmEnv:
         all_envs = torch.ones(self.cfg.num_envs, dtype=torch.bool, device=self.device)
         self._sample_episode(all_envs)
         self.snap, aux = self._evaluate()
-        return self._observe(aux)
+        obs = self._observe(aux)
+        hist = self._push_history(obs["flat"], reset_mask=all_envs)
+        if self.cfg.obs_history > 1:
+            obs["flat_history"] = hist
+        return obs
 
     # ------------------------------------------------------------------ #
     # Physics
@@ -1288,13 +1311,41 @@ class BatchedSwarmEnv:
             dim=-1,
         )
 
-        return {
+        flat = self._pack(ego, neighbour, edge)
+        out = {
             "ego": ego,
             "neighbour": neighbour,
             "edge": edge,
-            "flat": self._pack(ego, neighbour, edge),
+            "flat": flat,
             "state": self._critic_state(aux),
         }
+        if cfg.obs_history > 1:
+            out["flat_history"] = self._flat_hist
+        return out
+
+    def _push_history(self, flat: Tensor, reset_mask: Tensor | None = None) -> Tensor:
+        """Advance the history by one frame. ⛔ Call EXACTLY once per transition.
+
+        🔒 `_observe` is deliberately a pure read of `_flat_hist`, because under
+        `auto_reset` it runs **twice** per `step()` -- once for the terminal
+        observation the bootstrap needs, once for the post-reset observation that
+        is returned. Rolling inside it would advance the history twice for every
+        environment that did not terminate, silently shifting what "the previous
+        frame" means for exactly the envs the policy is learning from.
+
+        Slot 0 is the oldest and slot -1 the newest. On an episode boundary every
+        slot is filled with the current frame, so a fresh episode reads "nothing
+        has changed" rather than a jump from zeros -- which a hill climber would
+        read as a huge improvement in an arbitrary direction.
+        """
+        if self.cfg.obs_history <= 1:
+            return flat
+        self._flat_hist = torch.roll(self._flat_hist, shifts=-1, dims=2)
+        self._flat_hist[:, :, -1] = flat
+        if reset_mask is not None:
+            m = reset_mask.view(-1, 1, 1, 1)
+            self._flat_hist = torch.where(m, flat.unsqueeze(2), self._flat_hist)
+        return self._flat_hist
 
     def _pack(self, ego: Tensor, neighbour: Tensor, edge: Tensor) -> Tensor:
         """Max-N padded flat vector, `(B, N, 108)`.
@@ -1438,11 +1489,19 @@ class BatchedSwarmEnv:
 
         if not cfg.auto_reset:
             self.snap = new_snap
+            hist = self._push_history(final_obs["flat"])
+            if cfg.obs_history > 1:
+                final_obs["flat_history"] = hist
             return final_obs, rew, terminated, truncated, extras
 
         # Auto-reset, then re-evaluate. The second pass produces both the
         # observation auto-reset must return AND Phi of the fresh state, which
         # the next step's shaping needs -- see the module docstring.
-        self._sample_episode(terminated | truncated)
+        done = terminated | truncated
+        self._sample_episode(done)
         self.snap, aux_new = self._evaluate()
-        return self._observe(aux_new), rew, terminated, truncated, extras
+        obs = self._observe(aux_new)
+        hist = self._push_history(obs["flat"], reset_mask=done)
+        if cfg.obs_history > 1:
+            obs["flat_history"] = hist
+        return obs, rew, terminated, truncated, extras

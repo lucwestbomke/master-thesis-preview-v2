@@ -109,6 +109,16 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--timesteps", type=int, default=12_000_000)
     ap.add_argument("--num-drones", type=int, default=5)
     ap.add_argument(
+        "--obs-history",
+        type=int,
+        default=1,
+        help="frames of observation history the actor sees (1 = off, the default). "
+        "📏 Motivated by results/b0_ablation.md: local link repair is +6.9 pp of "
+        "B0's design advantage and is a hill climb carrying ONE step of search "
+        "state, which k=2 supplies. ⛔ Not the target memory memory_horizon.md "
+        "closed -- that needed 320 steps and was worth ~0",
+    )
+    ap.add_argument(
         "--init-from",
         type=Path,
         default=None,
@@ -248,6 +258,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         EnvConfig(
             num_envs=num_envs,
             num_drones=a.num_drones,
+            obs_history=a.obs_history,
             device=str(a.device),
             seed=seed,
             fidelity=a.fidelity,
@@ -269,6 +280,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         hidden=a.hidden,
         initial_log_std=a.initial_log_std,
         min_log_std=a.min_std,
+        obs_history=a.obs_history,
     ).to(a.device)
     init_from = None
     if a.init_from is not None:
@@ -333,6 +345,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "shuffle_minibatches": not a.no_shuffle,
         "value_clip": a.value_clip,
         "init_from": init_from,
+        "obs_history": a.obs_history,
         "actor_params": parameter_count(actor),
         "critic_params": parameter_count(critic),
         "weights": dataclasses.asdict(weights),

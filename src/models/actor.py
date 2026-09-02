@@ -88,13 +88,41 @@ class FlatTrunk(nn.Module):
     validity bits are what let it be *evaluated* off-N at all.
     """
 
-    def __init__(self, hidden: int = DEFAULT_MLP_HIDDEN):
+    def __init__(self, hidden: int = DEFAULT_MLP_HIDDEN, frames: int = 1):
         super().__init__()
-        self.net = _mlp([FLAT_DIM, hidden, hidden, hidden])
+        self.frames = frames
+        self.net = _mlp([FLAT_DIM * frames, hidden, hidden, hidden])
         self.out_dim = hidden
 
     def forward(self, flat: Tensor) -> Tensor:
-        return torch.tanh(self.net(flat))
+        # The MLP rung has no relational structure to preserve, so a stacked
+        # observation `(..., k, FLAT_DIM)` is simply flattened back into one
+        # vector. ⚠️ Without this, `nn.Linear` would silently fold `k` into the
+        # BATCH dimension and multiply against the wrong width.
+        return torch.tanh(self.net(flat.flatten(-2) if self.frames > 1 else flat))
+
+
+def unpack_stacked(flat: Tensor, frames: int) -> dict[str, Tensor]:
+    """`unpack_flat` over `(..., k, FLAT_DIM)`, concatenating history per ENTITY.
+
+    🔒 The point is that a stacked observation must not be flattened into one long
+    vector for the relational rungs. `ego` becomes `(..., k*EGO_DIM)` and each
+    neighbour slot becomes `(..., 7, k*NEIGHBOUR_DIM)`, so drone `j`'s history
+    stays attached to drone `j`. Flattening instead would destroy the permutation
+    structure that `docs/MODELS.md` requires DeepSets and the GNN to have, and the
+    off-N transfer columns would then be measuring its loss.
+
+    `valid` is taken from the NEWEST frame only: it is the max-N padding mask,
+    fixed for the whole episode at a given `N`, so stacking it would add `k`
+    identical copies.
+    """
+    parts = [unpack_flat(flat[..., i, :]) for i in range(frames)]
+    return {
+        "ego": torch.cat([p["ego"] for p in parts], dim=-1),
+        "neighbour": torch.cat([p["neighbour"] for p in parts], dim=-1),
+        "edge": torch.cat([p["edge"] for p in parts], dim=-1),
+        "valid": parts[-1]["valid"],
+    }
 
 
 class RelationalTrunk(nn.Module):
@@ -108,17 +136,18 @@ class RelationalTrunk(nn.Module):
     normalisation artefact instead of the architecture.
     """
 
-    def __init__(self, hidden: int = DEFAULT_HIDDEN, use_edges: bool = True):
+    def __init__(self, hidden: int = DEFAULT_HIDDEN, use_edges: bool = True, frames: int = 1):
         super().__init__()
         self.use_edges = use_edges
-        self.ego = _mlp([EGO_DIM, hidden, hidden])
-        self.neighbour = _mlp([NEIGHBOUR_DIM, hidden, hidden])
-        self.message = _mlp([2 * hidden + EDGE_DIM, hidden, hidden])
+        self.frames = frames
+        self.ego = _mlp([EGO_DIM * frames, hidden, hidden])
+        self.neighbour = _mlp([NEIGHBOUR_DIM * frames, hidden, hidden])
+        self.message = _mlp([2 * hidden + EDGE_DIM * frames, hidden, hidden])
         self.update = _mlp([2 * hidden, hidden, hidden])
         self.out_dim = hidden
 
     def forward(self, flat: Tensor) -> Tensor:
-        parts = unpack_flat(flat)
+        parts = unpack_flat(flat) if self.frames == 1 else unpack_stacked(flat, self.frames)
         valid = parts["valid"].unsqueeze(-1)  # (..., 7, 1)
 
         h_i = torch.tanh(self.ego(parts["ego"]))  # (..., H)
@@ -137,13 +166,13 @@ class RelationalTrunk(nn.Module):
         return torch.tanh(self.update(torch.cat([h_i, agg], dim=-1)))
 
 
-def build_trunk(architecture: str, hidden: int | None = None) -> nn.Module:
+def build_trunk(architecture: str, hidden: int | None = None, frames: int = 1) -> nn.Module:
     if architecture == "mlp":
-        return FlatTrunk(hidden or DEFAULT_MLP_HIDDEN)
+        return FlatTrunk(hidden or DEFAULT_MLP_HIDDEN, frames=frames)
     if architecture == "deepsets":
-        return RelationalTrunk(hidden or DEFAULT_HIDDEN, use_edges=False)
+        return RelationalTrunk(hidden or DEFAULT_HIDDEN, use_edges=False, frames=frames)
     if architecture == "gnn":
-        return RelationalTrunk(hidden or DEFAULT_HIDDEN, use_edges=True)
+        return RelationalTrunk(hidden or DEFAULT_HIDDEN, use_edges=True, frames=frames)
     raise ValueError(f"architecture must be one of {ARCHITECTURES}, got {architecture!r}")
 
 
@@ -183,10 +212,12 @@ class SwarmActor(nn.Module):
         initial_log_std: float = -0.5,
         min_log_std: float = -20.0,
         max_log_std: float = 2.0,
+        obs_history: int = 1,
     ):
         super().__init__()
         self.architecture = architecture
-        self.trunk = build_trunk(architecture, hidden)
+        self.obs_history = obs_history
+        self.trunk = build_trunk(architecture, hidden, frames=obs_history)
         self.head = nn.Linear(self.trunk.out_dim, ACTION_DIM)
         # One state-independent log-std per action dimension, the PPO standard.
         # -0.5 (sigma ~ 0.61) against a tanh-bounded mean in [-1, 1]: exploratory
@@ -208,7 +239,15 @@ class SwarmActor(nn.Module):
         self.max_log_std = float(max_log_std)
 
     def forward(self, flat: Tensor) -> tuple[Tensor, Tensor]:
-        """`(mean, log_std)`. `log_std` broadcasts against `mean`."""
+        """`(mean, log_std)`. `log_std` broadcasts against `mean`.
+
+        🔒 The public input is always **2-D in the feature dim**: `(..., FLAT_DIM)`
+        with no history, `(..., k * FLAT_DIM)` with it. Callers -- the trainer's
+        rollout buffer, `evaluate.py`, an ONNX export -- never handle a `k` axis.
+        The unflatten to `(..., k, FLAT_DIM)` happens here, once, at the boundary.
+        """
+        if self.obs_history > 1:
+            flat = flat.unflatten(-1, (self.obs_history, FLAT_DIM))
         mean = torch.tanh(self.head(self.trunk(flat)))
         return mean, self.log_std.clamp(self.min_log_std, self.max_log_std)
 
