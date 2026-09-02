@@ -50,31 +50,48 @@ observable clearance and capacity features, so it has a response function an
 opponent can find and exploit. A learned policy need not be exploitable the same
 way. Resolved by **Gate B** (§5), which is unchanged from its declaration.
 
-### RQ2 — Is adversary capability monotone in adversarial pressure?
+### RQ2 — Where does an adversary's power actually come from?
 
-📏 **The answer already measured is *no*, and it is counter-intuitive.**
-J2 (a beam parked on the MCV) is **stronger** than J3B (an exhaustive per-step
-best response) and than J3 (greedy retargeting) — 41.8 % against 42.2 % and
-44.5 %. Committing beats re-optimising, because a jammer that re-optimises every
-step hands a hill-climbing opponent a *moving* problem it can track while a
-parked beam forces a **persistent** detour.
+📏 **Measured 2026-09-02 at 5 seeds x 128 episodes on CUDA**
+([`results/j_ladder.md`](results/j_ladder.md)). The decomposition, on B0:
 
-🔍 This is the **second** non-monotone ladder in the project: the fidelity ladder
-is non-monotone in *difficulty* (📏 F1 is harder than F4, 27.9 % against 56.0 %
-under B0). *"Adding capability to a component does not monotonically increase its
-effect"* generalises into a methodological caution about how ablation ladders are
-read, and it is the finding most likely to outlive the rest of this paper.
+| transition | what it adds | cost to B0 |
+|---|---|---|
+| J1 → J2 | **directionality** | **−10.6 pp** |
+| J2 → J3B | **adaptivity** | **−2.9 pp** |
 
-🔒 **RQ2 is the insurance.** It stands whether or not J4 trains, and it gets
-*stronger* if J4 fails — "we trained a learned adversary and it still did not beat
-a parked beam" is a louder version of the same claim than the scripted rungs can
-make alone.
+🔍 **Directionality is worth 3.7x what adaptivity is worth.** That is the finding:
+an adversary's power in this task is overwhelmingly about *where the energy
+goes*, not about *re-deciding where it goes*. ⛔ It is also exactly why the J2
+control was declared non-optional — without it, J3B's total would have credited a
+**beam's** 10.6 pp to **adaptation**.
 
-⛔ **Blocked on one measurement.** The J2/J3/J3B ordering is currently a smoke
-test — one seed, 32 episodes, CPU. [`results/j_ladder.md`](results/j_ladder.md)
-declares that nothing downstream runs until it is re-measured at **5 seeds on
-CUDA**. The J2/J3B gap is 0.4 pp and the J2/J3 gap is 2.7 pp; neither is a
-finding yet. **This is the first run of the sequence in §7.**
+🔒 **RQ2 is the insurance.** It stands whether or not J4 trains, it is a measured
+decomposition rather than a bet, and it is a more useful caution for anyone
+building an adversarial evaluation than the claim it replaces.
+
+### ☠️ What it replaces, and why that matters
+
+⛔ **This RQ previously asked whether the ladder was non-monotone, and asserted
+that it was.** That rested on a smoke measurement — **one seed, 32 episodes,
+CPU** — and the 5-seed CUDA re-run **reverses the ordering outright**:
+
+| rung | smoke | **proper** |
+|---|---|---|
+| J2 beam on MCV | **41.8 %** ← smoke's strongest | 46.7 % |
+| J3 greedy | 44.5 % | 45.2 % |
+| J3B best response | 42.2 % | **43.8 %** ← **strongest** |
+
+The ladder is **monotone**: J3B > J3 > J2 > J1 > J0, and the paired comparison is
+clean — B0 is deterministic, so the same seed draws the same episodes at every
+rung, and **J3B beats J2 on 5/5 seeds**. *"Adaptivity does not help this
+adversary. At all."* is withdrawn.
+
+✅ **The declare-before-you-run rule is what caught this.**
+[`results/j_ladder.md`](results/j_ladder.md) labelled its own result a smoke
+measurement and declared the re-run as blocking on everything downstream. A false
+headline was stopped before it reached a paper. ⛔ Do not quote a single-seed
+CPU number as an ordering again.
 
 ### RQ3 — Does adversarial co-training produce robustness, or overfitting to the training opponent?
 
@@ -87,13 +104,25 @@ off-diagonal is the only place that shows. Gate B already requires this and it i
 not negotiable down to a diagonal for budget reasons — 📏 a 10 M-step run costs
 2.2 minutes, so the cross-product is affordable by a wide margin.
 
-📏 **J4 is now load-bearing, which it was not on 2026-08-27.** The original plan
-called it "the stretch" and "explicitly not load-bearing", reasoning that J3
-already extracted the full 11 pp of the inherited probe's window. That reasoning
-rested on the probe's 47.7 %, which J3B has since shown belongs to an adversary
-no stronger than a fixed beam. A learned, **non-myopic** adversary is the only
-rung left that can commit to a strategy over time rather than re-optimise each
-step, and therefore the only one that can make "adaptive" mean anything.
+📏 **RQ3 is where the thesis is actually bet, and the J-ladder is why.**
+B0 − GNN is **17.4 pp at J1 and 15.0 pp at J3B**: the strongest adversary that
+exists narrows B0's lead by **2.4 pp**, and linear extrapolation says closing the
+rest would need ~**6x** more adversarial pressure than the entire ladder supplies.
+⛔ So *adversarial evaluation alone does not close the gap*, and no stronger
+scripted rung is going to.
+
+🔍 **But that GNN never saw J2 or J3B while training.** Every degradation number
+in [`results/j_ladder.md`](results/j_ladder.md) is a policy meeting an adversary
+for the first time at test. Whether a policy **co-trained** against an opponent
+pool degrades less is the one lever nothing has touched, and it is the only
+remaining mechanism by which learning could earn its keep here.
+
+⚠️ **J4 was called "the stretch" and "explicitly not load-bearing" on
+2026-08-27.** That is no longer true, and the reason has changed twice — first
+because J3B looked weaker than a fixed beam (wrong, from one CPU seed), and now
+because the scripted ladder is monotone but *too small* to close 15 pp. The
+second reason is the measured one. 🔒 If J4 does not train, RQ1, RQ2 and RQ4 still
+stand and the paper reports that co-training was not reached.
 
 ### RQ4 — Does the robustness survive the airframe?
 
@@ -377,12 +406,42 @@ minimum, J4 if it trains. 📏 The window is 11 pp.
 ⛔ **Not** `hop_mean | observed` (it measures geometry) and **not**
 `chain_occluded` (it confounds with hop count, `corr = 0.963`).
 
-> ⚠️ **Amendment, 2026-09-02 — recorded, not substituted.** The declaration's
-> "📏 the window is 11 pp" cited the inherited probe's 47.7 %, which J3B has since
-> shown belongs to an adversary no stronger than a fixed beam. The **rules above
-> are unchanged**; what changed is which rung supplies "the strongest adversary
-> reached", and the honest current answer is **J2**. Gate B does not run until
-> RQ2's 5-seed CUDA re-measurement (§7, run 1) settles the ordering.
+> ⚠️ **Amendment 1, 2026-09-02 — recorded, not substituted.** The declaration's
+> "📏 the window is 11 pp" cited the inherited probe's 47.7 %. 📏 The 5-seed CUDA
+> re-measurement supersedes it: the strongest rung is **J3B**, the ladder is
+> **monotone**, and B0's measured window is **13.24 pp** [11.42 – 13.58]
+> ([`results/j_ladder.md`](results/j_ladder.md)). The **rules above are
+> unchanged**; only the number the window refers to has moved, and it moved in
+> the direction that makes Gate B answerable rather than blocked.
+>
+> ⚠️ **Amendment 2, 2026-09-02 — the normalisation, and this one was written
+> AFTER seeing that the two answers disagree.** Stated plainly because it is the
+> kind of choice this project's rules exist to constrain:
+>
+> | policy | J1 | J3B | gap (absolute) | gap (relative) |
+> |---|---|---|---|---|
+> | B0 | 57.3 % | 43.8 % | **13.24 pp** | **23.1 %** |
+> | gnn/deep (trained at J1) | 39.9 % | 28.7 % | **11.12 pp** | **27.9 %** |
+>
+> In **absolute pp** B0 degrades more → Gate B **confirm**. In **relative** terms
+> the GNN does → Gate B **refute**. A policy starting 17 pp lower has less to lose
+> in absolute terms, and a reviewer will say so immediately.
+>
+> 🔒 **Resolution: report BOTH, and treat the claim as supported only when they
+> AGREE.** That is the one resolution available which does not amount to choosing
+> the normalisation whose answer is already known. ⛔ Picking either alone, now,
+> would be exactly the post-hoc rule-invention this file opens by forbidding.
+>
+> ⚠️ **Neither row above is Gate B.** `gnn/deep` was trained at J1, not
+> adversarially; Gate B compares B0 against the *adversarially-trained* policy,
+> which does not exist yet.
+>
+> ⛔ **And the gap is not closing.** B0 − GNN is 17.4 pp at J1 and **15.0 pp** at
+> J3B, so the strongest available adversary narrows B0's lead by **2.4 pp**.
+> 📏 Linearly extrapolated, closing the remaining 15.0 pp needs ~**6x** more
+> adversarial pressure than the whole J1 → J3B ladder supplies. 🔍 **The thesis
+> bet is therefore specifically about adversarial TRAINING (RQ3), not adversarial
+> evaluation.** Nothing measured so far bears on it in either direction.
 
 ### Gate C — quantisation and coordination
 
@@ -424,7 +483,7 @@ March 2027. The official window is for **writing**, which is how it ends up good
 
 | when | what | why then |
 |---|---|---|
-| **run 1, this week** | 📏 **J-ladder at 5 seeds on CUDA.** J0/J1/J2/J3/J3B, B0 | Everything downstream reads the ordering, and it is currently one seed of 32 CPU episodes. [`results/j_ladder.md`](results/j_ladder.md) already declares that nothing runs until this does |
+| ~~run 1~~ | ✅ **DONE 2026-09-02.** J-ladder at 5 seeds x 128 episodes on CUDA, B0 + `gnn/deep`. The ordering **reversed**: monotone, J3B strongest. [`results/j_ladder.md`](results/j_ladder.md), [`j_ladder.jsonl`](results/j_ladder.jsonl) | It gated everything downstream, and it caught a false headline drawn from one CPU seed |
 | **Sep–Oct 2026** | **RQ4 end-to-end.** ONNX export, TensorRT, latency / p99 jitter / power on the Orin Nano | ⚠️ Deliberately first: PyTorch Geometric exports badly, and finding that out in month one is worth more than in month ten. It also depends on nothing else |
 | *in parallel, 1 week* | The BC-init probe (§3) | Cheap, timeboxed, upside only. ⛔ One week |
 | *in parallel* | `docs/REDUCTION.md` tasks 2–4, then 6 | Housekeeping that pays for the adversary |

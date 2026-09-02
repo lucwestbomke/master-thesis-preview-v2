@@ -162,3 +162,98 @@ and the adversary ladder is non-monotone in pressure. *"Adding capability to a
 component does not monotonically increase its effect"* is becoming a theme rather
 than an oddity, and it is a genuinely useful caution about how ablation ladders
 are read.
+
+---
+
+# 📏 The 5-seed CUDA re-measurement — and it **reverses** the smoke test
+
+**Measured 2026-09-02**, `results/j_ladder.jsonl`. B0 and `gnn/deep`, eval split,
+stage 4, F4, **cuda:0, 5 seeds x 128 episodes**. This is the run the section above
+declared as blocking: *"nothing downstream runs until they are measured properly."*
+
+⚠️ **B0's five seeds vary the EVALUATION episodes** (`grouped=False`; B0 is
+deterministic, so this is sampling variance). **The GNN's five seeds are TRAINING
+runs** (`grouped=True`). Those are different sources of variance: "worst seed"
+does not mean the same thing in the two blocks and the ranges are not directly
+comparable.
+
+## ☠️ The ladder is monotone. The non-monotonicity does not replicate.
+
+| rung | smoke (1 seed, 32 eps, CPU) | **proper (5 seeds, 128 eps, CUDA)** | worst seed |
+|---|---|---|---|
+| **J0** none | 60.2 % | **61.0 %** | 58.4 % |
+| **J1** isotropic | 54.3 % | **57.3 %** | 54.8 % |
+| **J2** beam on the MCV | **41.8 %** ← smoke's strongest | 46.7 % | 43.8 % |
+| **J3** greedy | 44.5 % | 45.2 % | 44.1 % |
+| **J3B** best response | 42.2 % | **43.8 %** ← **strongest** | 42.9 % |
+
+🔒 **The paired comparison is what settles it.** B0 is deterministic and the same
+seed draws the same episodes at every rung, so the rungs can be compared
+seed-by-seed rather than through overlapping ranges:
+
+| contrast | result | per-seed pp |
+|---|---|---|
+| **J3B vs J2** | J3B stronger on **5/5** | +3.37 +2.79 +0.24 +0.48 +2.91 |
+| J3B vs J3 | J3B stronger on 4/5 | +1.28 +1.47 −0.74 +0.86 +1.45 |
+| J3 vs J2 | J3 stronger on 4/5 | +2.09 +1.32 +0.99 −0.39 +1.46 |
+
+⛔ **So the conclusion above — *"adaptivity does not help this adversary. At
+all."* — is withdrawn.** It rested on one seed of 32 CPU episodes. Adaptivity
+helps, monotonically, and the ordering is J3B > J3 > J2 > J1 > J0.
+
+✅ **The process worked exactly as designed.** That section declared its own
+result a smoke measurement, declared the re-run as blocking, and declared that
+Gate B would not run until it resolved. A false headline was caught before it
+reached a paper. The 🔒 rule is the reason, not luck.
+
+## 📏 But the damage decomposes, and adaptivity is the small half
+
+| transition | what it adds | cost to B0 |
+|---|---|---|
+| J1 → J2 | **directionality** | **−10.6 pp** |
+| J2 → J3B | **adaptivity** | **−2.9 pp** |
+
+**Directionality is worth 3.7x what adaptivity is worth.** ⛔ This is precisely
+why `PLAN.md` declared the J2 control non-optional: without it, a J3B result
+would have credited a *beam's* 10.6 pp to *adaptation*.
+
+## 📏 The exploitability gap — and it depends on normalisation
+
+| policy | J1 | J3B | gap (absolute) | gap (relative) |
+|---|---|---|---|---|
+| **B0** | 57.3 % | 43.8 % | **13.24 pp** [11.42 – 13.58] | **23.1 %** |
+| **gnn/deep** | 39.9 % | 28.7 % | **11.12 pp** [10.11 – 13.58] | **27.9 %** |
+
+☠️ **The two normalisations disagree, and they point at opposite Gate B verdicts.**
+In absolute pp B0 degrades more (Gate B **confirm**); in relative terms the GNN
+does (Gate B **refute**). A policy starting 17 pp lower has less to lose in
+absolute terms, and a reviewer will say so.
+
+🔒 **Resolved by amendment in `PLAN.md` §5, and the amendment is honest about
+being written after seeing the disagreement:** report both, and treat the claim
+as supported only when they agree. That is the only resolution available that
+does not amount to picking the normalisation whose answer was already known.
+
+⚠️ **This is not Gate B.** `gnn/deep` was trained at J1, not adversarially. Gate B
+compares B0 against the *adversarially-trained* policy, which does not exist yet.
+
+## ⛔ And the gap is not closing
+
+| rung | B0 | GNN | B0 − GNN |
+|---|---|---|---|
+| J1 | 57.3 % | 39.9 % | **17.4 pp** |
+| J2 | 46.7 % | 30.0 % | 16.7 pp |
+| J3B | 43.8 % | 28.7 % | **15.0 pp** |
+
+The strongest adversary available narrows B0's lead by **2.4 pp**, from 17.4 to
+15.0. 📏 Linearly extrapolated, closing the remaining 15.0 pp would need roughly
+**6x more adversarial pressure than the whole J1 → J3B ladder supplies.**
+
+🔍 **The thesis bet is therefore specifically about adversarial TRAINING, not
+about adversarial evaluation.** This GNN never saw J2 or J3B while training. RQ3
+asks whether a policy co-trained against an opponent pool degrades less than one
+that was not — and nothing measured so far bears on that, in either direction.
+
+✅ **Sanity check holds at scale.** B0's `observed` is 92.37–92.80 % at *every*
+rung, so the emitter does not touch the sensor. Without that the exploitability
+gap would be uninterpretable.

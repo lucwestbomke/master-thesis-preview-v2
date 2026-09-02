@@ -56,11 +56,13 @@ against it → running on the hardware that has to fly it. Full text in
 
 1. **RQ1 — does the heuristic's advantage survive an adversary that adapts?**
    The exploitability gap, J1 → the strongest rung reached. Gate B.
-2. **RQ2 — is adversary capability monotone in adversarial pressure?**
-   📏 **No.** J2 (a parked beam) beats J3B (per-step best response) and J3
-   (greedy) — 41.8 % against 42.2 % and 44.5 %. Committing beats re-optimising.
-   ⚠️ Smoke-measured at one seed; the 5-seed CUDA re-run is the next thing that
-   happens. [`results/j_ladder.md`](results/j_ladder.md).
+2. **RQ2 — where does an adversary's power actually come from?**
+   📏 5 seeds x 128 episodes, CUDA: **directionality −10.6 pp, adaptivity
+   −2.9 pp** on B0. Power is overwhelmingly about *where the energy goes*, not
+   about re-deciding where it goes. ⚠️ This **replaces** a non-monotonicity claim
+   that came from one CPU seed and did **not** replicate: the ladder is monotone,
+   J3B > J3 > J2, J3B beating J2 on **5/5** paired seeds.
+   [`results/j_ladder.md`](results/j_ladder.md).
 3. **RQ3 — does adversarial co-training produce robustness or opponent-overfit?**
    J4, a learned jammer with an opponent pool, then the full cross-product.
    🔒 The **off-diagonal** is the result. ⛔ J4 is **not built**.
