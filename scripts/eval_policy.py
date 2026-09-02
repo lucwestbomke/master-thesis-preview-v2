@@ -214,6 +214,15 @@ def main() -> None:
     ap.add_argument("checkpoints", nargs="*", type=Path)
     ap.add_argument("--policy", nargs="*", default=[], choices=["random", "b0"])
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
+    ap.add_argument(
+        "--jammer",
+        default="J1",
+        choices=["J0", "J1", "J2", "J3", "J3B"],
+        help="the adversary rung to evaluate UNDER, PLAN.md §4. J1 is the inherited "
+        "isotropic emitter and every pre-2026-09-02 number in results/ was measured "
+        "at it. ⛔ Orthogonal to --fidelity, which decides whether the emitter is in "
+        "the SINR denominator at all: a rung is a beam PATTERN, not a fidelity level.",
+    )
     ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--stage", type=int, default=4, help="curriculum stage to evaluate at")
     ap.add_argument("--n", nargs="*", type=int, default=[5], help="swarm sizes (zero-shot)")
