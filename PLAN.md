@@ -112,7 +112,8 @@ degrades control?** Push the INT8 policy through the same harness and compare
 ## 3. The premise: B0 wins the static task, and the axis is closed
 
 This section exists so that nobody — including a future reader of this repo —
-re-opens it. **Three independent lines of evidence, all measured.**
+re-opens it. **Four independent lines of evidence**, and the fourth is
+structural rather than empirical.
 
 ### 📏 1. The gap is `observed`, and nothing else
 
@@ -182,6 +183,52 @@ behaviour did not move.
 propose a second action space. Both were pre-declared, both were measured, both
 failed, and continuing is the "always one more thing to try" failure this project
 has been warned about since `ROADMAP.md` was written.
+
+### 📏 4. And the reason is structural: the advantage cannot tell drones apart
+
+Measured 2026-09-02, declared before the run —
+[`results/credit_assignment.md`](results/credit_assignment.md),
+`scripts/measure_credit.py`.
+
+One value per global state is broadcast across `N` rows, so
+`A[t,b,i] = G[t,b,i] − V[t,b]` and therefore `Var_i(A) = Var_i(G)` **exactly**.
+That between-drone variance is the entire budget of drone-differentiating credit:
+whatever the policy gradient knows about *which drone should do what*, it knows
+through that and nothing else.
+
+📏 Decomposing the per-drone return by the law of total variance, eval split,
+stage 4, F4/J1, 64 envs × 600 steps, 3 seeds:
+
+| policy | **differentiable share** |
+|---|---|
+| random | **0.04 %** |
+| B0 | **0.11 %** |
+| GNN | **0.16 %** |
+
+🔒 The declared rule was `< 5 %` confirms. Measured **0.04–0.16 %**, two orders of
+magnitude inside it, and unchanged at the `γλ = 0.947` horizon GAE actually sees.
+**99.84–99.96 % of the return variance is identical across drones.**
+
+⛔ **And the structural half is exact rather than measured.** `reward_terms()`
+broadcasts `mission`, `idle`, `battery_variance` and `shaping` through `team(x)`,
+so they cancel out of `Var_i` *exactly*; `w_relay` ships at 0.0. **Only `energy`
+and `effort` — two motion costs — can differ between drones**, and the
+measurement returns four exact zeros matching that term for term. Pinned by
+`tests/test_measure_credit.py`.
+
+☠️ **This converts eight nulls into one mechanism with a prediction:** an
+intervention that modifies only team reward terms cannot change role
+differentiation, because team terms contribute exactly zero to the only variance
+that can distinguish drones. `w_hold`, `d_ref`, `potential_scale` and `PHI_V2`
+are all team terms. ⚠️ It also reframes `w_relay`'s null — its 71× rise took the
+differentiating share from ~0.04 % to ~2.9 %, which is *"still negligible"*, not
+*"per-drone credit does not help"*.
+
+🔍 **So the reward axis is closed structurally, not by exhaustion** — a better
+reason than "we tried eight things", and it redirects the search to the critic
+and the advantage, neither of which has been touched. ⛔ That is not a licence for
+a ninth intervention: anything built on it needs its own gate, declared before
+its own run, at 5 seeds, judged on the worst.
 
 ### 🔧 The one remaining probe, and it is timeboxed to one week
 

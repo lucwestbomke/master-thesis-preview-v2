@@ -37,7 +37,13 @@ of measured evidence:
   `episode_return` rank-correlates with `mission_capable` at **ρ = 0.987** over
   20 rows — so the objective is not misspecified;
 * 📏 **eight pre-declared interventions, eight nulls**, the last with a
-  *measured-adequate* gradient.
+  *measured-adequate* gradient;
+* 📏 and the reason is **structural**: one value per global state broadcast across
+  `N` rows makes `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is
+  **0.04–0.16 %** of the total. Only `energy` and `effort` can differ between
+  drones at all — every other reward term is `team(x)`-broadcast and cancels
+  exactly. ⛔ So no shaping knob can move role differentiation, which retro-predicts
+  the eight nulls. [`results/credit_assignment.md`](results/credit_assignment.md).
 
 ⛔ **So stop asking whether learned control beats the heuristic on the static
 task.** The protagonist is the strongest available policy and it happens to be
