@@ -39,6 +39,7 @@ Design decisions and the measurements behind them: `docs/BLOCK_D.md`.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,6 +103,35 @@ GAMMA = 0.997
 
 PTX_DBM = 30.0
 JAMMER_DBM = 30.0
+# --- the directional jammer, PLAN.md §3 ------------------------------------ #
+#: `theta_3dB` of the 3GPP element pattern, TR 38.901 §7.3.
+#: `A(theta) = -min[12*(theta/theta_3dB)^2, A_max]` dB. **Azimuth only**: the
+#: drones fly at 40-80 m and the jammer sits at ground level a kilometre out, so
+#: elevation angles are ~5 deg and elevation discrimination buys nothing.
+#: ⛔ **Beamwidth is NOT an action and never becomes one** -- it smuggles the
+#: transmit-power axis back in, since a wide beam *is* a barrage jammer and a
+#: narrow one is a spotlight (`docs/inherited/DECISIONS.md`).
+JAMMER_BEAMWIDTH_DEG = 25.0
+#: `A_max`, the front-to-back ratio. Attenuation floors here.
+JAMMER_MAX_ATTEN_DB = 30.0
+#: Peak gain on boresight. 📏 The inherited beam probe that measured the 11 pp
+#: adversary window used **25 deg / 12 dBi**, so this is the value that number
+#: belongs to. `JAMMER_DBM` is conducted power; EIRP on boresight is
+#: `JAMMER_DBM + JAMMER_PEAK_GAIN_DBI`.
+JAMMER_PEAK_GAIN_DBI = 12.0
+
+#: 🔒 The adversary ladder, `PLAN.md` §3. **Orthogonal to the fidelity ladder and
+#: to the curriculum**, and that separation is load-bearing:
+#:
+#:   * `EnvConfig.fidelity` (F3/F4) decides whether the emitter is in the SINR
+#:     denominator at all;
+#:   * the curriculum's `jammer_on` decides whether it is switched on this
+#:     episode, and must ramp identically in every condition;
+#:   * this decides only the **pattern**.
+#:
+#: Collapsing them would confound RQ1's jammer rung with the curriculum ramp,
+#: which `docs/inherited/BLOCK_F.md` decision 4 forbids.
+Jammer = Literal["J0", "J1", "J2", "J3"]
 BANDWIDTH_HZ = 10e6
 NOISE_FIGURE_DB = 7.0
 
@@ -321,6 +351,25 @@ class EnvConfig:
     #: longer state.
     action_space: Literal["acceleration", "velocity"] = "acceleration"
 
+    #: Which rung of the adversary ladder. 🔒 `J1` is the default because it is
+    #: the **inherited** jammer -- isotropic, fixed power, riding the target --
+    #: and `test_jammer.py` asserts it is bit-identical to the pre-beam
+    #: environment, so no inherited number moves.
+    #:
+    #: | rung | emitter | what it isolates |
+    #: |---|---|---|
+    #: | `J0` | none | that the jammer matters at all |
+    #: | `J1` | isotropic, fixed power | the inherited condition. 📏 B0 58.6 % |
+    #: | `J2` | directional, **fixed** target (the MCV) | separates *directionality* from *adaptivity*. ⛔ Not optional: without it, "the adaptive jammer beat B0" might only mean "a beam beat B0" |
+    #: | `J3` | directional, **greedy-adaptive** | adaptive without learning. 📏 the probe measured 47.7 % |
+    #:
+    #: ⛔ `J4` (a *learned* jammer) is deliberately absent. `PLAN.md` marks it the
+    #: stretch and **not load-bearing**, and an enum value that silently emits a
+    #: plausible-but-meaningless bearing is exactly the half-specified condition
+    #: `BLOCK_F.md` decision 5 exists to prevent. The seam it will use is
+    #: `_jammer_boresight`.
+    jammer: Jammer = "J1"
+
     fidelity: Fidelity = "F4"
     # `R` for the binary rungs. Measured, not chosen: scripts/calibrate_r.py,
     # and `test_fidelity.py` pins this default against what that script reports.
@@ -375,6 +424,8 @@ class EnvConfig:
     training_extras: bool = False
 
     def __post_init__(self) -> None:
+        if self.jammer not in ("J0", "J1", "J2", "J3"):
+            raise ValueError(f"jammer must be one of J0-J3, got {self.jammer!r}")
         if self.fidelity not in LADDER:
             raise ValueError(f"fidelity must be one of {sorted(LADDER)}, got {self.fidelity!r}")
         if self.duplexing_override is not None:
@@ -502,6 +553,9 @@ class BatchedSwarmEnv:
         self.drone_pos = torch.zeros(b, n, 3, device=dev)
         self.drone_vel = torch.zeros(b, n, 3, device=dev)
         self.last_accel = torch.zeros(b, n, device=dev)
+        # J3's carried aim. Starts on the MCV: the one node the chain must reach,
+        # and the only defensible choice before any chain exists.
+        self.jam_target = torch.full((b,), self.mcv_idx, dtype=torch.long, device=dev)
         self.battery = torch.ones(b, n, device=dev)
         self.mcv_pos = torch.zeros(b, 3, device=dev)
         self.hvt_pos = torch.zeros(b, 3, device=dev)
@@ -607,6 +661,9 @@ class BatchedSwarmEnv:
         self.drone_pos = torch.where(m2, spawn, self.drone_pos)
         self.drone_vel = torch.where(m2, torch.zeros_like(spawn), self.drone_vel)
         self.last_accel = torch.where(m1, torch.zeros_like(self.last_accel), self.last_accel)
+        self.jam_target = torch.where(
+            mask, torch.full_like(self.jam_target, self.mcv_idx), self.jam_target
+        )
 
         # Initial charge is randomised in [charge_min, 1] at the design stage --
         # a swarm mid-sortie has heterogeneous charge, which is what gives
@@ -788,15 +845,104 @@ class BatchedSwarmEnv:
         Under F3 and F4 the two are identical; under F0-F2 the result is zeroed
         anyway.
         """
-        r = self.cfg.n_radio
+        cfg = self.cfg
+        if cfg.jammer == "J0":
+            return torch.zeros(cfg.num_envs, cfg.n_radio, device=self.device)
+
+        r = cfg.n_radio
         d = (radio - self.hvt_pos.unsqueeze(1)).norm(dim=-1)
         los = channel_clr[:, :r, self.hvt_idx] >= 0.0
         pathloss = channel.pathloss_a2g_umi_av_db(d, radio[..., 2], los)
+        eirp_dbm = JAMMER_DBM + self._beam_gain_db(radio)
         return (
-            channel.dbm_to_mw(JAMMER_DBM - pathloss)
+            channel.dbm_to_mw(eirp_dbm - pathloss)
             * self.jammer_on.unsqueeze(-1)
-            * float(self.cfg.channel_jammer)
+            * float(cfg.channel_jammer)
         )
+
+    def _beam_gain_db(self, radio: Tensor) -> Tensor:
+        """`(B, R)` antenna gain toward each radio node, in dB.
+
+        The 3GPP element pattern, TR 38.901 §7.3:
+
+            A(theta) = -min[ 12 * (theta / theta_3dB)^2 , A_max ]   dB
+
+        added to a peak gain on boresight. **Continuous in angle on purpose** --
+        a hard cone would make the jammer's action effectively discrete and leave
+        a learned rung with no usable gradient (`PLAN.md` §3).
+
+        🔒 **J1 returns exactly zero**, so the isotropic rung is bit-identical to
+        the environment before the beam existed and no inherited number moves.
+        `test_jammer.py` pins that.
+
+        ⚠️ A beam is not uniformly worse for the swarm than isotropic. It
+        concentrates: +12 dB on boresight and down to −18 dB off it. 📏 That is
+        why "point at the observer" measured **59.9 %** against isotropic's
+        58.6 % — *worse than not aiming at all*. The observer is a pure source
+        and never listens, and the jammer enters SINR at the **receiver**.
+        """
+        b, r = self.cfg.num_envs, self.cfg.n_radio
+        if self.cfg.jammer == "J1":
+            return torch.zeros(b, r, device=self.device)
+
+        # The emitter rides the target, so bearings are measured from the HVT.
+        rel = radio[..., :2] - self.hvt_pos[:, None, :2]
+        bearing = torch.atan2(rel[..., 1], rel[..., 0])  # (B, R)
+        boresight = torch.gather(bearing, 1, self._jammer_boresight().unsqueeze(1))
+        off = bearing - boresight
+        # Wrap to [-pi, pi] without a branch.
+        off = torch.atan2(off.sin(), off.cos())
+        theta_deg = off.abs() * (180.0 / math.pi)
+        atten = torch.clamp(12.0 * (theta_deg / JAMMER_BEAMWIDTH_DEG) ** 2, max=JAMMER_MAX_ATTEN_DB)
+        return JAMMER_PEAK_GAIN_DBI - atten
+
+    def _jammer_boresight(self) -> Tensor:
+        """`(B,)` index of the radio node the beam points at.
+
+        🔒 **J3 aims with one step of latency, and that is not an approximation
+        for convenience.** The jammer raises the noise floor, which changes
+        capacity, which changes the routed chain, which is what J3 targets --
+        so aiming at *this* step's chain would be circular. It aims at the
+        previous step's, which is also the honest model: `PLAN.md` §3 gives the
+        jammer *"bearings and received powers of the drones' transmissions"*,
+        i.e. an ESM receiver that observes and then reacts.
+
+        ⛔ It never reads `hvt_pos` or any drone position directly, for the same
+        reason B0 may only read `obs["flat"]`.
+        """
+        if self.cfg.jammer == "J2":
+            # A FIXED target. ⛔ Not optional and not a weaker J3: without it, a
+            # result at J3 cannot separate "the adversary adapted" from "the
+            # adversary had a beam" (`PLAN.md` Gate B, control row). The MCV is
+            # the choice because it is the one node the chain must always reach
+            # -- and 📏 it is not a degenerate target either: isotropic jammer
+            # power received is −58 to −61 dBm at the drones against −91.9 dBm at
+            # the MCV, 31 dB of shelter, because the MCV sits in ground clutter.
+            return self.jam_target.new_full((self.cfg.num_envs,), self.mcv_idx)
+        return self.jam_target
+
+    def _update_jammer_target(self, aux: dict[str, Tensor]) -> None:
+        """J3's greedy step: aim at **the chain's weakest receiver**.
+
+        `PLAN.md` §3 specifies J3 as *"retarget the chain's weakest receiver each
+        step"*. Among the edges the router actually chose, take the one carrying
+        the least capacity and target its **receiving** end.
+
+        🔍 Targeting the receiver rather than the link is what makes this
+        physically coherent: the jammer enters SINR at the antenna that is
+        listening, so there is no such thing as jamming an outgoing signal. It
+        also means the observer — a pure source that never listens — is never
+        selected, which is the geometry that made "point at the observer"
+        measure *worse* than isotropic.
+        """
+        if self.cfg.jammer != "J3":
+            return
+        on_edge, cap = aux["on_edge"], aux["capacity_mbps"]
+        masked = torch.where(on_edge, cap, torch.full_like(cap, float("inf")))
+        weakest = masked.flatten(1).argmin(dim=1) % self.cfg.n_radio
+        # An episode with no routed chain has nothing to retarget; hold the MCV.
+        has_chain = on_edge.flatten(1).any(dim=1)
+        self.jam_target = torch.where(has_chain, weakest, torch.full_like(weakest, self.mcv_idx))
 
     def _capacity(self, pos_k: Tensor, channel_clr: Tensor) -> tuple[Tensor, Tensor]:
         """Per-link capacity **under the rung's channel model**.
@@ -926,6 +1072,10 @@ class BatchedSwarmEnv:
             .any(dim=-1)
             .any(dim=-1),
         }
+        # 🔒 AFTER the snapshot, so J3 aims at THIS chain on the NEXT step. See
+        # `_jammer_boresight` for why the latency is required rather than
+        # tolerated.
+        self._update_jammer_target(aux)
         return snap, aux
 
     # ------------------------------------------------------------------ #

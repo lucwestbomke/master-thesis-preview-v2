@@ -122,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
+    ap.add_argument("--jammer", default="J1", choices=["J0", "J1", "J2", "J3"],
+                    help="the adversary rung the policy TRAINS under, PLAN.md §3")
     ap.add_argument(
         "--action-space",
         default="acceleration",
@@ -235,6 +237,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
             seed=seed,
             fidelity=a.fidelity,
             action_space=a.action_space,
+            jammer=a.jammer,
             eval_routes=a.eval_routes,
             auto_reset=True,
             training_extras=True,  # 🔒 the truncation bootstrap needs final_state
@@ -293,6 +296,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "timesteps": a.timesteps,
         "fidelity": a.fidelity,
         "action_space": a.action_space,
+        "jammer": a.jammer,
         "split": "eval" if a.eval_routes else "train",
         "curriculum": not a.no_curriculum,
         "stage": None if not a.no_curriculum else a.stage,

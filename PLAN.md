@@ -78,7 +78,11 @@ kilometre away and takes the NLoS branch.
 | **J1** | isotropic, fixed power | exists — the inherited jammer. B0 scores 58.6 % |
 | **J2** | directional, **fixed** target | separates *directionality* from *adaptivity*. ⛔ Not optional: without it, "the adaptive jammer beat B0" might only mean "a beam beat B0" |
 | **J3** | directional, **greedy-adaptive** — retarget the chain's weakest receiver each step | adaptive without learning. Scripted, reproducible, no training loop. 📏 47.7 % |
-| **J4** | directional, **learned** by alternating best response with an opponent pool | the stretch |
+| **J4** | directional, **learned** by alternating best response with an opponent pool | the stretch. ⛔ **Not built** — deliberately absent from `EnvConfig.jammer`, because an enum value that silently emits an arbitrary bearing is the half-specified condition `BLOCK_F.md` decision 5 exists to prevent |
+
+📏 **Built and measured 2026-09-02** — `src/env/core.py`, `src/env/test_jammer.py`,
+[`results/j_ladder.md`](results/j_ladder.md). ⚠️ **J3 as specified here is
+weaker than J2**, which was not anticipated: see that file before running Gate B.
 
 🔒 **J3 is sufficient to test the claim.** If the question is whether learned
 policies degrade less than B0 under an adaptive adversary, a greedy scripted

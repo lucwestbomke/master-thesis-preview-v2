@@ -34,8 +34,11 @@ policy need not be.
 Three contributions, each able to fail on its own — [`PLAN.md`](PLAN.md):
 
 1. **The adversary learns.** A directional jammer that chooses where to point.
-   Ladder J0–J4; 📏 the window is measured at **11 pp** (B0 falls 58.6 % → 47.7 %
-   under per-step retargeting).
+   Ladder J0–J3 is **built** (`EnvConfig.jammer`); J4 is not. 📏 The inherited
+   probe measured an 11 pp window (B0 58.6 % → 47.7 % under per-step
+   retargeting), but ⚠️ **the built J3 is weaker than J2** — 44.5 % against
+   41.8 % — because "the chain's weakest receiver" is not the most damaging
+   target. See [`results/j_ladder.md`](results/j_ladder.md).
 2. **The policy runs on the drone.** ONNX → TensorRT on a Jetson Orin Nano.
    Latency, p99 jitter, power — and *does quantisation degrade coordination more
    than control?*
@@ -51,6 +54,7 @@ Three contributions, each able to fail on its own — [`PLAN.md`](PLAN.md):
 | `data/frankfurt_box.npz` | buildings + road graph as tensors. **Committed on purpose** — it IS the environment | 🔒 frozen |
 | `src/env/occlusion.py` | batched segment-vs-**oriented**-box (slab method), 2.5D. `torch.compile`d | ✅ inherited, unchanged |
 | `src/env/channel.py` | path loss by link class, SINR, Shannon with a modulation cap | ✅ inherited, unchanged |
+| `src/env/core.py::_beam_gain_db` | the **directional jammer**, 3GPP TR 38.901 element pattern. J0–J3 | ✅ own |
 | `src/env/routing.py` | hop-limited widest-path DP, `min(C_i)/min(n, 3)` | ✅ inherited, unchanged |
 | `src/env/energy.py` | rotary-wing propulsion power (U-shaped), radio DC draw | ✅ inherited, unchanged |
 | `src/env/reward.py` | mission term + potential-based shaping. Carries `PHI_V2` | ⚠️ inherited, **to reduce** |
@@ -193,7 +197,7 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
 ```bash
 uv sync --extra dev                # `dev` is an EXTRA -- plain `uv sync` gives
                                    # you neither pytest nor ruff
-uv run pytest                      # 344 passed (+ 7 CUDA-gated, 4 skip on arm64)
+uv run pytest                      # 363 passed (+ 7 CUDA-gated, 4 skip on arm64)
 uv run ruff check . && uv run ruff format .
 ```
 

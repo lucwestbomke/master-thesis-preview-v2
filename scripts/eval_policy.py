@@ -124,6 +124,7 @@ def make_env(a, seed: int, num_drones: int) -> BatchedSwarmEnv:
             seed=seed,
             fidelity=a.fidelity,
             action_space=a.action_space,
+            jammer=a.jammer,
             eval_routes=not a.train_routes,
             auto_reset=False,  # one episode per environment: clean metric rows
             stage_weights=weights,
@@ -248,7 +249,7 @@ def main() -> None:
 
     split = "train" if a.train_routes else "eval"
     print(
-        f"device={a.device}  fidelity={a.fidelity}  stage={a.stage}  routes={split}  "
+        f"device={a.device}  fidelity={a.fidelity}  jammer={a.jammer}  stage={a.stage}  routes={split}  "
         f"{a.seeds} seeds x {a.num_envs} episodes; median [IQR] across seeds"
     )
     print("⚠️  device is part of provenance: never compare across devices.\n")
@@ -292,6 +293,7 @@ def main() -> None:
                         "split": split,
                         "stage": a.stage,
                         "fidelity": a.fidelity,
+                        "jammer": a.jammer,
                         "device": a.device,
                         "num_envs": a.num_envs,
                         "grouped": bool(a.group and name == a.group),
