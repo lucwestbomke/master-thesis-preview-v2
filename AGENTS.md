@@ -55,7 +55,12 @@ against it → running on the hardware that has to fly it. Full text in
 [`PLAN.md`](PLAN.md) §2:
 
 1. **RQ1 — does the heuristic's advantage survive an adversary that adapts?**
-   The exploitability gap, J1 → the strongest rung reached. Gate B.
+   ✅ **No — Gate B CONFIRMED 2026-09-03.** 📏 The exploitability gap J1 → J3B is
+   **13.24 pp** for B0 against **7.51 / 7.29 pp** for the adversarially-trained
+   policies — disjoint ranges, worst seed, both normalisations.
+   🔍 The claim is about the **derivative**: B0 is more capable *and* more
+   exploitable. ⛔ It still wins by 11.9 pp at J3B.
+   [`results/gate_b.md`](results/gate_b.md).
 2. **RQ2 — where does an adversary's power actually come from?**
    📏 5 seeds x 128 episodes, CUDA: **directionality −10.6 pp, adaptivity
    −2.9 pp** on B0. Power is overwhelmingly about *where the energy goes*, not
@@ -64,8 +69,12 @@ against it → running on the hardware that has to fly it. Full text in
    J3B > J3 > J2, J3B beating J2 on **5/5** paired seeds.
    [`results/j_ladder.md`](results/j_ladder.md).
 3. **RQ3 — does adversarial co-training produce robustness or opponent-overfit?**
-   J4, a learned jammer with an opponent pool, then the full cross-product.
-   🔒 The **off-diagonal** is the result. ⛔ J4 is **not built**.
+   ✅ **Robustness, for the scripted rungs.** 📏 At J3B — never trained against —
+   `advtrain-J2` scores **31.8 %, beating `advtrain-J3B`'s 30.9 % on its own
+   training opponent**; the diagonal is not the best cell anywhere, and
+   adversarial training costs **+0.3 pp** on the clean rung. 🔧 Secondary
+   hypothesis: a *committed* adversary is a better teacher than a re-optimising
+   one — one measurement, two rungs. ⛔ J4 is still **not built**.
 4. **RQ4 — does it survive the airframe?** ONNX → TensorRT on a Jetson Orin
    Nano. Latency, p99 jitter, power — and *does quantisation degrade
    coordination more than control?* Gate C. 🔧 Pure Python.

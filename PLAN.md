@@ -44,11 +44,25 @@ the hardware that has to fly it.**
 
 ### RQ1 — Does the heuristic's advantage survive an adversary that adapts to it?
 
-The **exploitability gap**: how far each policy's `mission_capable` falls between
-J1 and the strongest adversary reached. B0 hill-climbs deterministically on
-observable clearance and capacity features, so it has a response function an
-opponent can find and exploit. A learned policy need not be exploitable the same
-way. Resolved by **Gate B** (§5), which is unchanged from its declaration.
+✅ **ANSWERED 2026-09-03: no. Gate B confirms.**
+[`results/gate_b.md`](results/gate_b.md).
+
+📏 The **exploitability gap**, J1 → J3B, 5 seeds × 128 episodes, CUDA, eval split:
+
+| policy | gap | worst | relative |
+|---|---|---|---|
+| **B0** | **13.24 pp** | 11.42 | **23.1 %** |
+| gnn/deep, trained at J1 | 11.12 pp | 10.11 | 27.9 % |
+| **gnn/deep, trained at J2** | **7.51 pp** | 7.12 | **18.7 %** |
+| **gnn/deep, trained at J3B** | **7.29 pp** | 6.50 | **18.6 %** |
+
+✅ B0's gap exceeds both adversarially-trained policies' on the median, on the
+**worst seed**, on the relative normalisation, and with **disjoint ranges**.
+🔒 Amendment 2 required the two normalisations to *agree*, and they do.
+
+🔍 **The claim is about the derivative, not the level.** B0 is more capable *and
+more exploitable*; the adversarially-trained policy is less capable and more
+robust. ⛔ B0 still wins by **11.9 pp** at J3B, and that is not the claim.
 
 ### RQ2 — Where does an adversary's power actually come from?
 
@@ -98,11 +112,29 @@ CPU number as an ordering again.
 J4: a **learned** jammer, trained by alternating best response against an
 **opponent pool**. Then the full policy × adversary cross-product.
 
-🔒 **The off-diagonal is the result, not the diagonal.** A policy robust only to
-the adversary it trained against has overfitted to one opponent, and the
-off-diagonal is the only place that shows. Gate B already requires this and it is
-not negotiable down to a diagonal for budget reasons — 📏 a 10 M-step run costs
-2.2 minutes, so the cross-product is affordable by a wide margin.
+✅ **ANSWERED 2026-09-03 for the SCRIPTED rungs: robustness, not overfitting.**
+📏 The cross-product, `mission_capable` median (rows = trained at, cols =
+evaluated at):
+
+| trained at ↓ / eval at → | J1 | J2 | J3B |
+|---|---|---|---|
+| J1 (control) | 39.9 % | 30.0 % | 28.7 % |
+| **J2** | **40.2 %** | **34.3 %** | **31.8 %** |
+| J3B | 39.3 % | 33.1 % | 30.9 % |
+
+🔒 **The off-diagonal is the result, not the diagonal**, and it is emphatic:
+at J3B — an adversary it never trained against — `advtrain-J2` scores **31.8 %,
+beating `advtrain-J3B`'s 30.9 % on its own training opponent**. The diagonal is
+not the best cell anywhere. ✅ And adversarial training is **free on the clean
+rung**: +0.3 pp at J1, no robustness/performance trade-off.
+
+🔍 **Secondary, and it rhymes with RQ2:** training against the *committed* J2
+generalises better than against the *re-optimising* J3B. The same property that
+makes an adversary damaging makes it a better teacher. 🔧 One measurement, two
+rungs — a hypothesis, not a result.
+
+⚠️ **J4 is still owed.** The strongest adversary reached is *scripted*; a learned
+jammer could find a response the scripted rungs do not.
 
 📏 **RQ3 is where the thesis is actually bet, and the J-ladder is why.**
 B0 − GNN is **17.4 pp at J1 and 15.0 pp at J3B**: the strongest adversary that
@@ -421,7 +453,11 @@ when sampled and **69.9 %** when evaluated at the Gaussian's mean — a 54× gap
 mean represents the behaviour that was optimised. ⛔ Do not raise
 `initial_log_std` above ~0 without reporting the sampled-vs-mean gap alongside.
 
-### Gate B — adversarial robustness
+### Gate B — adversarial robustness. ✅ **CONFIRMED 2026-09-03.**
+
+📏 B0 **13.24 pp** [11.42–13.58] against the adversarially-trained policies'
+**7.51** [7.12–10.90] and **7.29** [6.50–9.06] — disjoint, worst-seed, and on both
+normalisations. Full record and caveats in [`results/gate_b.md`](results/gate_b.md).
 
 🔒 **Reproduced verbatim as declared 2026-08-27. Not edited.**
 
