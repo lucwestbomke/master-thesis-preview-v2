@@ -166,6 +166,20 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-curriculum", action="store_true")
     ap.add_argument("--stage", type=int, default=4, help="fixed stage when --no-curriculum")
     ap.add_argument("--lr", type=float, default=3e-4)
+    ap.add_argument(
+        "--gae-lambda",
+        type=float,
+        default=0.95,
+        help="GAE(lambda). ⚠️ Never swept in this project's history",
+    )
+    ap.add_argument(
+        "--grad-norm-clip",
+        type=float,
+        default=0.5,
+        help="⚠️ Applied JOINTLY to policy and value parameters (ppo.py). "
+        "docs/inherited/BLOCK_G.md flags that as 'real, plausible under a GRU, "
+        "never tested' -- exposed here so it can finally be tested",
+    )
     ap.add_argument("--entropy", type=float, default=0.0, help="entropy_loss_scale")
     ap.add_argument(
         "--min-log-std",
@@ -299,6 +313,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
     ppo = PPOConfig(
         rollouts=rollouts,
         learning_epochs=a.epochs,
+        gae_lambda=a.gae_lambda,
+        grad_norm_clip=a.grad_norm_clip,
         mini_batches=mini_batches,
         learning_rate=a.lr,
         entropy_loss_scale=a.entropy,
@@ -340,6 +356,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "curriculum": not a.no_curriculum,
         "stage": None if not a.no_curriculum else a.stage,
         "lr": a.lr,
+        "gae_lambda": a.gae_lambda,
+        "grad_norm_clip": a.grad_norm_clip,
         "min_log_std": a.min_std,
         "entropy_loss_scale": a.entropy,
         "shuffle_minibatches": not a.no_shuffle,
