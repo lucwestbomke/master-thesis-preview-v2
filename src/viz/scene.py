@@ -37,6 +37,10 @@ COLOURS = {
     "clear": "#27ae60",
     "observer": "#8e44ad",
     "source": "#16a085",
+    # The emitter and its beam. Deliberately NOT "blocked"/"tower" red: the beam
+    # is drawn over buildings and the two must stay separable at a glance.
+    "jammer": "#d81b60",
+    "beam": "#f06292",
 }
 
 

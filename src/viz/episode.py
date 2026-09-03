@@ -20,7 +20,15 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ..env.core import DT_S, EPISODE_STEPS, HVT_Z_M, MCV_Z_M, SPAWN_RING_M, BatchedSwarmEnv
+from ..env.core import (
+    DT_S,
+    EPISODE_STEPS,
+    HVT_Z_M,
+    JAMMER_BEAMWIDTH_DEG,
+    MCV_Z_M,
+    SPAWN_RING_M,
+    BatchedSwarmEnv,
+)
 from ..env.reward import CAPACITY_THRESHOLD_MBPS
 from .scene import COLOURS, HALF_M, draw_static_scene, load_artefact
 
@@ -46,6 +54,16 @@ class EpisodeTrace:
     # because a figure of an F0 episode that does not say so is a figure of a
     # chain running through a tower with no explanation attached.
     fidelity: str = "F4"
+    #: The adversary rung this was flown under. A figure of a J2 episode that does
+    #: not say so is a figure of a beam with no explanation attached -- the same
+    #: reason `fidelity` is carried.
+    jammer: str = "J1"
+    #: `(T,)` index of the radio node the beam points at: `0..N-1` are drones,
+    #: `N` is the MCV, `-1` means "no beam" (J0, or J1 which is isotropic, or the
+    #: emitter switched off by the curriculum this episode).
+    jam_target: np.ndarray | None = None
+    #: `(T,)` whether the emitter is radiating at all this step.
+    jammer_on: np.ndarray | None = None
 
     @property
     def observer(self) -> np.ndarray:
@@ -116,6 +134,7 @@ def fly(
     steps: int = EPISODE_STEPS,
     fidelity: str = "F4",
     no_buildings: bool = False,
+    jammer: str = "J1",
 ) -> EpisodeTrace:
     """Run one episode of the real env on one route and record it.
 
@@ -143,6 +162,7 @@ def fly(
             stage_weights=(0.0, 0.0, 0.0, 1.0),
             fidelity=fidelity,
             no_buildings=no_buildings,
+            jammer=jammer,
         )
     )
     obs = env.reset()
@@ -159,11 +179,31 @@ def fly(
 
     act_fn = _make_policy(policy, env, num_drones)
     rec: dict[str, list] = {
-        k: [] for k in ("pos", "chain", "capable", "capacity", "hops", "sees", "occluded")
+        k: []
+        for k in (
+            "pos",
+            "chain",
+            "capable",
+            "capacity",
+            "hops",
+            "sees",
+            "occluded",
+            "jam_target",
+            "jammer_on",
+        )
     }
     hvt = []
+    directional = jammer in ("J2", "J3", "J3B")
     for _ in range(steps):
+        # ⚠️ Captured BEFORE the step, because that is the boresight the step is
+        # about to radiate on. `jam_target` is updated at the end of the step for
+        # the *next* one -- that one-tick latency is deliberate (`core.py`:
+        # aiming at this step's chain would be circular), so reading it after
+        # would draw the beam one tick ahead of the physics it caused.
+        if directional:
+            rec["jam_target"].append(env._jammer_boresight()[0].clone())
         obs, _, _, _, ex = env.step(act_fn(obs))
+        rec["jammer_on"].append(env.jammer_on[0].clone())
         hvt.append(env.hvt_pos[0, :2].clone())
         rec["pos"].append(env.drone_pos[0].clone())
         rec["chain"].append(ex["on_edge"][0].clone())
@@ -189,6 +229,19 @@ def fly(
         sees=stack("sees"),
         occluded=stack("occluded"),
         fidelity="F0-nogeo" if no_buildings else fidelity,
+        jammer=jammer,
+        # −1 wherever there is no beam to draw: an isotropic or absent emitter has
+        # no boresight, and a step the curriculum switched the emitter off has no
+        # beam even at a directional rung.
+        jam_target=(
+            np.where(stack("jammer_on") > 0, stack("jam_target"), -1)
+            if directional
+            else np.full(steps, -1)
+        ),
+        # ⚠️ `env.jammer_on` is the CURRICULUM's switch, not the rung's. At J0
+        # there is no emitter at all, so the flag being 1 would otherwise draw an
+        # emitter marker for an adversary that does not exist.
+        jammer_on=(stack("jammer_on") > 0) & (jammer != "J0"),
     )
 
 
@@ -268,6 +321,104 @@ def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
 # --------------------------------------------------------------------------- #
 
 
+#: How far the drawn beam extends, metres. The emitter's reach is set by power
+#: and geometry, not by a range -- this is a drawing length chosen to cross the
+#: box, so the wedge reads as a direction rather than as a claimed footprint.
+BEAM_DRAW_M = 1400.0
+
+
+def beam_nodes(trace: EpisodeTrace, i: int) -> np.ndarray:
+    """`(R, 2)` positions of the radio nodes at step `i`, in boresight index order.
+
+    🔒 The order is `core.py`'s: drones `0..N-1`, then the MCV at `N`. That is the
+    indexing `_jammer_boresight` returns, so a mismatch here would draw the beam
+    at a confidently wrong node.
+    """
+    return np.vstack([trace.pos[i, :, :2], trace.mcv[None]])
+
+
+def beam_wedge(trace: EpisodeTrace, i: int):
+    """`(apex_xy, half_angle_deg, bearing_deg)` for step `i`, or None if no beam.
+
+    The emitter rides the target, so the wedge apex is the HVT. The half-angle is
+    `core.JAMMER_BEAMWIDTH_DEG` -- the 3 dB beamwidth, i.e. the angle at which the
+    element pattern has fallen 3 dB, not an angle at which the beam stops.
+    """
+    if trace.jam_target is None or i >= len(trace.jam_target):
+        return None
+    tgt = int(trace.jam_target[i])
+    if tgt < 0:
+        return None
+    nodes = beam_nodes(trace, i)
+    if tgt >= len(nodes):
+        return None
+    apex = trace.hvt[i]
+    d = nodes[tgt] - apex
+    if not np.isfinite(d).all() or float(np.hypot(d[0], d[1])) < 1e-6:
+        return None
+    return apex, JAMMER_BEAMWIDTH_DEG, float(np.degrees(np.arctan2(d[1], d[0])))
+
+
+def draw_beam(ax, trace: EpisodeTrace, i: int, artists: dict | None = None) -> dict:
+    """Draw, or move, the emitter and its beam for step `i`.
+
+    Returns the artist dict so an animation updates them in place rather than
+    adding a patch every frame, which leaks artists and slows the render down as
+    the episode goes on.
+    """
+    from matplotlib.patches import Circle, Wedge
+
+    spec = beam_wedge(trace, i)
+    on = bool(trace.jammer_on[i]) if trace.jammer_on is not None else False
+    isotropic = on and trace.jammer == "J1"
+
+    if artists is None:
+        artists = {
+            "wedge": Wedge(
+                (0, 0), BEAM_DRAW_M, 0, 1, color=COLOURS["beam"], alpha=0.22, zorder=2, lw=0
+            ),
+            "halo": Circle((0, 0), 260.0, facecolor=COLOURS["beam"], alpha=0.14, zorder=2, lw=0),
+        }
+        (artists["emitter"],) = ax.plot(
+            [],
+            [],
+            marker="X",
+            ms=11,
+            color=COLOURS["jammer"],
+            zorder=8,
+            markeredgecolor="white",
+            markeredgewidth=0.8,
+            linestyle="none",
+        )
+        # The boresight itself. A 50 deg wedge at map scale reads as an area; the
+        # line says which node is actually illuminated, which is the information.
+        (artists["axis"],) = ax.plot(
+            [], [], color=COLOURS["jammer"], lw=1.2, ls=(0, (5, 3)), alpha=0.85, zorder=6
+        )
+        ax.add_patch(artists["wedge"])
+        ax.add_patch(artists["halo"])
+
+    artists["wedge"].set_visible(spec is not None)
+    artists["halo"].set_visible(isotropic)
+    if spec is not None:
+        apex, half, bearing = spec
+        artists["wedge"].set_center((float(apex[0]), float(apex[1])))
+        artists["wedge"].set_theta1(bearing - half)
+        artists["wedge"].set_theta2(bearing + half)
+    if spec is not None:
+        node = beam_nodes(trace, i)[int(trace.jam_target[i])]
+        artists["axis"].set_data([trace.hvt[i][0], node[0]], [trace.hvt[i][1], node[1]])
+    else:
+        artists["axis"].set_data([], [])
+    if isotropic:
+        artists["halo"].set_center((float(trace.hvt[i][0]), float(trace.hvt[i][1])))
+    if on:
+        artists["emitter"].set_data([trace.hvt[i][0]], [trace.hvt[i][1]])
+    else:
+        artists["emitter"].set_data([], [])
+    return artists
+
+
 def figure(trace: EpisodeTrace, out: Path | None = None, art: dict | None = None):
     """Four-panel thesis figure. Vector by default -- pass a `.pdf` path."""
     import matplotlib.pyplot as plt
@@ -298,6 +449,33 @@ def figure(trace: EpisodeTrace, out: Path | None = None, art: dict | None = None
             zorder=4,
         )
     ax.plot(*trace.mcv, "k*", ms=20, zorder=7, label="MCV")
+
+    # The emitter rides the target, so its track IS the HVT route; what is worth
+    # drawing is where the beam was pointing. A wedge per step would be an opaque
+    # smear, so draw the LAST step that had a beam and say so in the label.
+    if trace.jam_target is not None and (np.asarray(trace.jam_target) >= 0).any():
+        last = int(np.flatnonzero(np.asarray(trace.jam_target) >= 0)[-1])
+        draw_beam(ax, trace, last)
+        ax.plot(
+            [],
+            [],
+            marker="X",
+            ms=9,
+            color=COLOURS["jammer"],
+            linestyle="none",
+            label=f"emitter, beam at t = {last * DT_S:.0f} s",
+        )
+    elif trace.jammer_on is not None and bool(np.asarray(trace.jammer_on).any()):
+        draw_beam(ax, trace, len(trace.hvt) - 1)
+        ax.plot(
+            [],
+            [],
+            marker="X",
+            ms=9,
+            color=COLOURS["jammer"],
+            linestyle="none",
+            label=f"emitter ({trace.jammer}, isotropic)",
+        )
     ax.plot(
         trace.hvt[-1, 0],
         trace.hvt[-1, 1],
@@ -325,7 +503,7 @@ def figure(trace: EpisodeTrace, out: Path | None = None, art: dict | None = None
     ax.set_aspect("equal")
     ax.legend(loc="upper left", fontsize=9)
     ax.set_title(
-        f"{trace.policy} @ {trace.fidelity} — route #{trace.route_idx} — "
+        f"{trace.policy} @ {trace.fidelity}/{trace.jammer} — route #{trace.route_idx} — "
         f"mission-capable {trace.capable.mean() * 100:.0f} % of {len(t) * DT_S:.0f} s"
     )
     ax.set_xlabel("metres east of box centre")
@@ -427,8 +605,15 @@ def animate(
     stride: int = 4,
     zoom: bool = False,
     art: dict | None = None,
-) -> Path:
-    """Write an eval video. Returns the path, which is what a wandb call wants."""
+    live: bool = False,
+) -> Path | None:
+    """Write an eval video, or show it live.
+
+    `live=True` opens an interactive window and returns None instead of writing a
+    file -- for watching a policy fly rather than for producing an artefact. It
+    needs an interactive matplotlib backend, so it is a local-machine tool and not
+    something to call on a headless box.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 
@@ -475,6 +660,7 @@ def animate(
     axc.legend(fontsize=8, loc="upper right")
 
     obs_idx = trace.observer
+    beam = draw_beam(ax, trace, 0)
 
     def draw(i):
         p = trace.hvt[i]
@@ -494,10 +680,12 @@ def animate(
             else:
                 line.set_data([], [])
         cursor.set_data([t_s[i], t_s[i]], [0, 60])
+        draw_beam(ax, trace, i, beam)
         sep = float(np.linalg.norm(p - trace.mcv))
         state = "CAPABLE" if trace.capable[i] else "no feed"
         title.set_text(
-            f"{trace.policy} @ {trace.fidelity}  route #{trace.route_idx}   t = {t_s[i]:5.1f} s   "
+            f"{trace.policy} @ {trace.fidelity}/{trace.jammer}  route #{trace.route_idx}   "
+            f"t = {t_s[i]:5.1f} s   "
             f"separation {sep:4.0f} m   {trace.hops[i]} hops   "
             f"{trace.capacity[i]:5.1f} Mbps   {state}"
         )
@@ -507,12 +695,41 @@ def animate(
         else:
             ax.set_xlim(-HALF_M, HALF_M)
             ax.set_ylim(-HALF_M, HALF_M)
-        return hvt_dot, drones, obs_dot, cursor, title
+        return hvt_dot, drones, obs_dot, cursor, title, beam["emitter"]
 
     anim = FuncAnimation(
         fig, draw, frames=range(0, len(t_s), stride), interval=1000 / fps, blit=False
     )
     fig.tight_layout()
+
+    if live:
+        # ⚠️ On a non-interactive backend `plt.show()` returns immediately and the
+        # animation is collected without ever rendering -- matplotlib then emits a
+        # warning about a deleted Animation, which reads like a bug rather than
+        # like "you have no display". Say the useful thing instead.
+        if (
+            not plt.get_backend()
+            .lower()
+            .startswith(("qt", "tk", "macosx", "gtk", "wx", "nbagg", "webagg"))
+        ):
+            raise SystemExit(
+                f"--live needs an interactive matplotlib backend; this one is "
+                f"{plt.get_backend()!r}. On a headless box drop --live and use "
+                f"--video, which writes an mp4."
+            )
+        # ⚠️ `anim` must stay referenced until the window closes or matplotlib
+        # garbage-collects the timer and the figure sits frozen on frame 0 --
+        # the classic silent failure of an interactive FuncAnimation.
+        fig._contested_relay_anim = anim
+        print(
+            f"    live: {len(range(0, len(t_s), stride))} frames at {fps} fps"
+            f"  (~{len(range(0, len(t_s), stride)) / fps:.0f} s). Close the window to continue.",
+            flush=True,
+        )
+        plt.show()
+        plt.close(fig)
+        return None
+
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.suffix != ".gif" and _ffmpeg_available():
         anim.save(out, writer=FFMpegWriter(fps=fps, bitrate=2400))

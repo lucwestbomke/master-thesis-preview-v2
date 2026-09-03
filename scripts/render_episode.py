@@ -102,6 +102,20 @@ def main() -> None:
     ap.add_argument("--compare", action="store_true", help="one figure per policy, same route")
     ap.add_argument("--fidelity", choices=FIDELITIES, default="F4", help="Block F rung")
     ap.add_argument(
+        "--jammer",
+        default="J1",
+        choices=["J0", "J1", "J2", "J3", "J3B"],
+        help="adversary rung. J1 (default) is isotropic and draws a halo; J2/J3/J3B "
+        "are directional and draw the beam. ⛔ Orthogonal to --fidelity, which decides "
+        "whether the emitter is in the SINR denominator at all",
+    )
+    ap.add_argument(
+        "--live",
+        action="store_true",
+        help="open an interactive window instead of writing a file. Needs a display "
+        "and an interactive matplotlib backend, so it is a local tool",
+    )
+    ap.add_argument(
         "--compare-fidelity",
         action="store_true",
         help="one figure per Block F rung, same policy and route",
@@ -130,11 +144,29 @@ def main() -> None:
                 seed=a.seed,
                 fidelity="F0" if rung == "F0-nogeo" else rung,
                 no_buildings=rung == "F0-nogeo",
+                jammer=a.jammer,
             )
             report(trace)
             label = name if name in POLICIES else Path(name).parent.name
-            stem = f"route{route}_{label}" + ("" if rung == "F4" else f"_{rung}")
+            stem = (
+                f"route{route}_{label}"
+                + ("" if rung == "F4" else f"_{rung}")
+                + ("" if a.jammer == "J1" else f"_{a.jammer}")
+            )
             # Vector, because these go into the thesis. Raster only for the video.
+            if a.live:
+                # ⛔ No file written: --live is for watching, and a run that both
+                # shows and saves invites quoting a figure nobody looked at.
+                animate(
+                    trace,
+                    a.out / f"{stem}.mp4",
+                    fps=a.fps,
+                    stride=a.stride,
+                    zoom=a.zoom,
+                    art=art,
+                    live=True,
+                )
+                continue
             fig_path = a.out / f"{stem}.pdf"
             figure(trace, out=fig_path, art=art)
             print(f"    figure -> {fig_path}")
