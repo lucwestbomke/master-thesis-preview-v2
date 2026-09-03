@@ -237,7 +237,7 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
 ```bash
 uv sync --extra dev                # `dev` is an EXTRA -- plain `uv sync` gives
                                    # you neither pytest nor ruff
-uv run pytest                      # 363 passed (+ 7 CUDA-gated, 4 skip on arm64)
+uv run pytest                      # 392 passed, 4 skipped on arm64 (+ CUDA-gated)
 uv run ruff check . && uv run ruff format .
 ```
 

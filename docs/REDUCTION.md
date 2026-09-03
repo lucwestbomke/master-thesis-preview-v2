@@ -105,7 +105,21 @@ runs on true geometry at every rung; a gated diagnostic would report
 
 ---
 
-## 3. Reward: strip the dead terms, promote `PHI_V2`
+## 3. Reward: strip the dead terms. ⛔ **Do NOT promote `PHI_V2`**
+
+> ⛔ **CORRECTED 2026-09-03.** This task originally read *"strip the dead terms,
+> promote `PHI_V2`"*, and the promotion half is **wrong**. `PHI_V2` was measured
+> at 5 seeds on 2026-09-01 and **killed on its own pre-declared rule** — the
+> observer moved 11.8 m of a 130 m gap against a required 20 m
+> ([`../results/phi_v2_gate.md`](../results/phi_v2_gate.md)). It ships **off**.
+>
+> 🔍 And the reason is now structural rather than empirical:
+> [`../results/credit_assignment.md`](../results/credit_assignment.md) measured
+> that every `team(x)`-broadcast reward term — which is all of `Φ` — contributes
+> **exactly zero** to the only variance that can distinguish drones. ⛔ **No
+> shaping intervention can move role differentiation**, so the audit reproduced
+> below is correct about `Φ`'s gradient and irrelevant to the deficit it was
+> aimed at. The removals in this task still stand; the promotion does not.
 
 **Where:** `src/env/reward.py`, `src/env/test_reward.py`.
 
@@ -117,8 +131,9 @@ runs on true geometry at every rung; a gated diagnostic would report
 | `w_relay` — a per-drone potential on `on_path` | raised between-drone advantage variance **71×** and moved behaviour not at all (`hop \| observed` 1.88–1.93 against a control of 1.91) |
 | `Snapshot.on_path`, `agent_specific_state` | only read by the above |
 
-**Promote** `PHI_V2` to the default and delete the shipped weights. 📏 The audit
-that justifies it: across the closing band the shipped `Φ` moves **0.320 in
+⛔ ~~**Promote** `PHI_V2` to the default and delete the shipped weights.~~ **Killed
+— see the correction above.** 📏 The audit that motivated it, kept because the
+measurement is sound even though the intervention failed: across the closing band the shipped `Φ` moves **0.320 in
 total** — 0.0133 per 8 m step against the **0.0544** the energy term pays for
 cruising — and it is *exactly constant in four drones out of five*, because every
 component is a hard `min` / `max` / routing reduction. Moving a drone that holds
