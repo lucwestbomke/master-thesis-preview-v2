@@ -127,9 +127,15 @@ def fly(
     """
     from ..env.core import EnvConfig
 
+    # 🔒 Inferred from the checkpoint, never passed in. A renderer that silently
+    # builds a one-frame env for a frame-stacked policy would either crash or --
+    # worse -- draw a different network's behaviour and label it this one's.
+    obs_history = _checkpoint_obs_history(policy)
+
     env = BatchedSwarmEnv(
         EnvConfig(
             num_envs=1,
+            obs_history=obs_history,
             num_drones=num_drones,
             seed=seed,
             auto_reset=False,
@@ -142,6 +148,14 @@ def fly(
     obs = env.reset()
     pin_route(env, route_idx)
     obs = env._observe(env._evaluate()[1])
+    # `pin_route` rewrites the episode after `reset()`, so the history has to be
+    # re-seeded against the pinned state -- otherwise frame 0 carries the frames
+    # of the route that was sampled and thrown away.
+    hist = env._push_history(
+        obs["flat"], reset_mask=torch.ones(1, dtype=torch.bool, device=env.device)
+    )
+    if obs_history > 1:
+        obs["flat_history"] = hist
 
     act_fn = _make_policy(policy, env, num_drones)
     rec: dict[str, list] = {
@@ -178,6 +192,13 @@ def fly(
     )
 
 
+def _checkpoint_obs_history(name: str) -> int:
+    """Frames of history a checkpoint expects; 1 for B0, random and friends."""
+    if name in POLICY_NAMES or not Path(name).exists():
+        return 1
+    return int(torch.load(name, map_location="cpu", weights_only=False).get("obs_history", 1))
+
+
 def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
     """Any policy, one signature.
 
@@ -189,7 +210,7 @@ def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
     from ..baselines import B0Policy
 
     if name not in POLICY_NAMES and Path(name).exists():
-        from ..env.core import ACTION_DIM, FLAT_DIM
+        from ..env.core import ACTION_DIM
         from ..models import SwarmActor
 
         blob = torch.load(name, map_location=env.device, weights_only=False)
@@ -202,13 +223,15 @@ def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
             architecture=blob["architecture"],
             hidden=blob.get("hidden"),
             min_log_std=blob.get("min_log_std", -20.0),
+            obs_history=blob.get("obs_history", 1),
         ).to(env.device)
         actor.load_state_dict(blob["policy"])
         actor.eval()
 
         @torch.no_grad()
         def act_checkpoint(obs):
-            mean, _ = actor(obs["flat"].reshape(n, FLAT_DIM))
+            key = "flat_history" if "flat_history" in obs else "flat"
+            mean, _ = actor(obs[key].reshape(n, -1))
             return mean.view(1, n, ACTION_DIM)
 
         return act_checkpoint
