@@ -340,9 +340,14 @@ def beam_nodes(trace: EpisodeTrace, i: int) -> np.ndarray:
 def beam_wedge(trace: EpisodeTrace, i: int):
     """`(apex_xy, half_angle_deg, bearing_deg)` for step `i`, or None if no beam.
 
-    The emitter rides the target, so the wedge apex is the HVT. The half-angle is
-    `core.JAMMER_BEAMWIDTH_DEG` -- the 3 dB beamwidth, i.e. the angle at which the
-    element pattern has fallen 3 dB, not an angle at which the beam stops.
+    The emitter rides the target, so the wedge apex is the HVT.
+
+    ☠️ **`JAMMER_BEAMWIDTH_DEG` is `theta_3dB`, the FULL half-power beamwidth, not
+    a half-angle.** `core.py` applies TR 38.901's
+    `A(theta) = -min[12*(theta/theta_3dB)^2, A_max]`, so 📏 attenuation is 3 dB at
+    **12.5 deg** off boresight, 12 dB at 25 deg, and reaches the 30 dB floor at
+    39.5 deg. Drawing the main lobe at +-`theta_3dB` makes it twice as wide as it
+    is -- a 50 deg cone rather than 25 deg, covering about half the box.
     """
     if trace.jam_target is None or i >= len(trace.jam_target):
         return None
@@ -356,7 +361,7 @@ def beam_wedge(trace: EpisodeTrace, i: int):
     d = nodes[tgt] - apex
     if not np.isfinite(d).all() or float(np.hypot(d[0], d[1])) < 1e-6:
         return None
-    return apex, JAMMER_BEAMWIDTH_DEG, float(np.degrees(np.arctan2(d[1], d[0])))
+    return apex, JAMMER_BEAMWIDTH_DEG / 2.0, float(np.degrees(np.arctan2(d[1], d[0])))
 
 
 def draw_beam(ax, trace: EpisodeTrace, i: int, artists: dict | None = None) -> dict:
@@ -374,8 +379,14 @@ def draw_beam(ax, trace: EpisodeTrace, i: int, artists: dict | None = None) -> d
 
     if artists is None:
         artists = {
+            # Main lobe: the -3 dB contour, +-theta_3dB/2.
             "wedge": Wedge(
-                (0, 0), BEAM_DRAW_M, 0, 1, color=COLOURS["beam"], alpha=0.22, zorder=2, lw=0
+                (0, 0), BEAM_DRAW_M, 0, 1, color=COLOURS["beam"], alpha=0.20, zorder=3, lw=0
+            ),
+            # The -12 dB contour at +-theta_3dB, so the lobe does not read as a
+            # hard edge that the pattern does not actually have.
+            "wedge12": Wedge(
+                (0, 0), BEAM_DRAW_M, 0, 1, color=COLOURS["beam"], alpha=0.07, zorder=2, lw=0
             ),
             "halo": Circle((0, 0), 260.0, facecolor=COLOURS["beam"], alpha=0.14, zorder=2, lw=0),
         }
@@ -396,15 +407,18 @@ def draw_beam(ax, trace: EpisodeTrace, i: int, artists: dict | None = None) -> d
             [], [], color=COLOURS["jammer"], lw=1.2, ls=(0, (5, 3)), alpha=0.85, zorder=6
         )
         ax.add_patch(artists["wedge"])
+        ax.add_patch(artists["wedge12"])
         ax.add_patch(artists["halo"])
 
     artists["wedge"].set_visible(spec is not None)
+    artists["wedge12"].set_visible(spec is not None)
     artists["halo"].set_visible(isotropic)
     if spec is not None:
         apex, half, bearing = spec
-        artists["wedge"].set_center((float(apex[0]), float(apex[1])))
-        artists["wedge"].set_theta1(bearing - half)
-        artists["wedge"].set_theta2(bearing + half)
+        for name, mult in (("wedge", 1.0), ("wedge12", 2.0)):
+            artists[name].set_center((float(apex[0]), float(apex[1])))
+            artists[name].set_theta1(bearing - half * mult)
+            artists[name].set_theta2(bearing + half * mult)
     if spec is not None:
         node = beam_nodes(trace, i)[int(trace.jam_target[i])]
         artists["axis"].set_data([trace.hvt[i][0], node[0]], [trace.hvt[i][1], node[1]])

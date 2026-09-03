@@ -124,7 +124,13 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--video", action="store_true", help="also write an mp4")
     ap.add_argument("--zoom", action="store_true", help="video follows the HVT")
-    ap.add_argument("--fps", type=int, default=25)
+    ap.add_argument(
+        "--fps",
+        type=float,
+        default=25.0,
+        help="frames per second. 📏 One tick is DT_S = 0.4 s, so --stride 1 --fps 2.5 "
+        "is real time; the default is 10x",
+    )
     ap.add_argument("--stride", type=int, default=4, help="steps per rendered frame")
     ap.add_argument("--out", type=Path, default=OUTDIR)
     a = ap.parse_args()

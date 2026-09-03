@@ -80,9 +80,30 @@ def test_the_wedge_points_at_the_node_the_physics_targets(traces, rung: str) -> 
         want = float(np.degrees(np.arctan2(d[1], d[0])))
         # Wrapped difference, so 179.9 deg vs -179.9 deg is 0.2 and not 359.8.
         assert abs((bearing - want + 180) % 360 - 180) < 1e-6
-        assert half == JAMMER_BEAMWIDTH_DEG
+        # ☠️ theta_3dB is the FULL half-power beamwidth, so the drawn HALF-angle
+        # is half of it. Drawing +-theta_3dB made the lobe twice as wide as the
+        # pattern -- a 50 deg cone over half the box -- and this test originally
+        # pinned that mistake instead of catching it.
+        assert half == pytest.approx(JAMMER_BEAMWIDTH_DEG / 2.0)
         checked += 1
     assert checked > 0, "no beam was drawn at all, so nothing was verified"
+
+
+def test_the_drawn_lobe_is_the_half_power_beamwidth() -> None:
+    """📏 Against `core.py`'s own pattern rather than against a remembered number.
+
+    `A(theta) = -min[12*(theta/theta_3dB)^2, A_max]` puts the -3 dB point at
+    theta_3dB/2. A wedge half-angle that does not land on 3 dB is not the main
+    lobe, whatever it is.
+    """
+    from src.env.core import JAMMER_MAX_ATTEN_DB
+
+    half = JAMMER_BEAMWIDTH_DEG / 2.0
+    atten = min(12.0 * (half / JAMMER_BEAMWIDTH_DEG) ** 2, JAMMER_MAX_ATTEN_DB)
+    assert atten == pytest.approx(3.0), "the drawn half-angle must be the -3 dB point"
+    # And the outer contour the renderer draws at 2x is the -12 dB point.
+    outer = min(12.0 * (JAMMER_BEAMWIDTH_DEG / JAMMER_BEAMWIDTH_DEG) ** 2, JAMMER_MAX_ATTEN_DB)
+    assert outer == pytest.approx(12.0)
 
 
 def test_the_emitter_rides_the_target(traces) -> None:
