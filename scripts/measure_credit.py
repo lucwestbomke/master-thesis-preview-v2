@@ -91,12 +91,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.baselines.b0 import B0Policy
 from src.env.core import STAGES, BatchedSwarmEnv, EnvConfig
+from src.env.reward import RewardWeights
 from src.models.actor import SwarmActor
 
 #: The per-drone reward terms. Everything else in `reward_terms()` goes through
 #: `team(x)` and is identical across drones by construction, so it cancels out of
 #: `Var_i` exactly and cannot carry role credit.
-PER_DRONE_TERMS = ("energy", "effort", "relay")
+PER_DRONE_TERMS = ("energy", "effort", "relay", "difference")
 
 
 def make_env(a, seed: int) -> BatchedSwarmEnv:
@@ -114,7 +115,11 @@ def make_env(a, seed: int) -> BatchedSwarmEnv:
             stage_weights=weights,
             training_extras=True,  # this is the whole point: per-term rewards
             compile_occlusion=a.device != "cpu",
-        )
+        ),
+        # ⚠️ The difference reward is the one intervention this script exists to
+        # SCORE rather than to explain away, so it has to be settable here.
+        # Everything else is left at `DEFAULT_WEIGHTS`.
+        weights=RewardWeights(w_difference=a.w_difference),
     )
 
 
@@ -126,6 +131,10 @@ def load_actor(path: Path, env: BatchedSwarmEnv) -> SwarmActor:
         architecture=blob["architecture"],
         hidden=blob.get("hidden"),
         min_log_std=blob.get("min_log_std", -20.0),
+        # ⚠️ Defaults are the PRE-change behaviour, so an old checkpoint
+        # still loads as the network it was trained as.
+        tanh_mean=blob.get("tanh_mean", True),
+        layer_norm=blob.get("layer_norm", False),
     ).to(env.device)
     actor.load_state_dict(blob["policy"])
     actor.eval()
@@ -226,6 +235,15 @@ def main() -> None:
     ap.add_argument("--fidelity", default="F4")
     ap.add_argument("--jammer", default="J1")
     ap.add_argument("--gamma", type=float, default=0.999)
+    ap.add_argument(
+        "--w-difference",
+        type=float,
+        default=0.0,
+        help="weight on the difference reward D_i = G - G_without_i. 0.0 (default) "
+        "reproduces every row already in results/credit.jsonl. 🔒 The pre-declared "
+        "reading in this file's docstring applies unchanged: >20 %% refutes the "
+        "mechanism, <5 %% confirms it",
+    )
     ap.add_argument("--train-routes", action="store_true")
     ap.add_argument("--out", type=Path, default=None, help="append one JSON line here")
     a = ap.parse_args()

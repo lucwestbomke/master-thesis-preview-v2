@@ -643,13 +643,30 @@ def test_reward_terms_sum_to_the_reward_they_decompose():
             -1, 1
         )
         _, rew, _, _, extras = env.step(actions)
-        terms = [v for k, v in extras.items() if k.startswith("reward/")]
-        # 7 since Block G added the per-drone `relay` term. The count is asserted
-        # so a term cannot be added to the reward and forgotten in the
-        # decomposition -- which is how a flat return curve gets attributed to
-        # the wrong place. Update it deliberately when the reward gains a term.
-        assert len(terms) == 7
-        assert torch.allclose(torch.stack(terms).sum(0), rew, atol=1e-5)
+        named = {k.split("/", 1)[1]: v for k, v in extras.items() if k.startswith("reward/")}
+        # 🔒 The NAMES, not just the count. A term added to the reward and
+        # forgotten in the decomposition is how a flat return curve gets
+        # attributed to the wrong place; a term *renamed* is how a published
+        # per-drone/team table silently starts describing something else.
+        #
+        #   7 since Block G added the per-drone `relay` term.
+        #   8 since 2026-09-04 added `difference` -- the difference reward
+        #     D_i = G(z) - G(z_-i), which ships at w_difference = 0.0.
+        #
+        # Update this deliberately when the reward gains a term, and update
+        # `scripts/measure_credit.py::PER_DRONE_TERMS` with it if the new term is
+        # per-drone.
+        assert set(named) == {
+            "mission",
+            "idle",
+            "battery_variance",
+            "shaping",
+            "energy",
+            "effort",
+            "relay",
+            "difference",
+        }
+        assert torch.allclose(torch.stack(list(named.values())).sum(0), rew, atol=1e-5)
 
 
 def test_set_stage_weights_moves_which_stage_fresh_episodes_draw():

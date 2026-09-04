@@ -74,7 +74,26 @@ AXES: dict[str, str] = {
     "gae_lambda": "--gae-lambda",
     "grad_norm_clip": "--grad-norm-clip",
     "initial_log_std": "--initial-log-std",
-    "min_std": "--min-std",
+    "min_std": "--min-log-std",
+    # -- the axes nothing in this project has ever swept, 2026-09-04 ----------
+    #: ☠️ The optimisation budget. docs/inherited/BLOCK_G.md held gradient
+    #: density at 488 steps/M across all three cadences, which pins the minibatch
+    #: at 40,960 rows in every one of them -- ~5,900 Adam steps for a 12 M run.
+    "mini_batch_size": "--mini-batch-size",
+    "target_kl": "--target-kl",
+    "grad_norm_clip_critic": "--grad-norm-clip-critic",
+    #: 🔍 The difference reward, `results/capability_gates.md` Gate E.
+    "w_difference": "--w-difference",
+    #: 📏 Observation content, `results/capability_gates.md` "not in either gate".
+    #: ⛔ `--mask-broadcast-obs` is deliberately NOT here: it is a `store_true`
+    #: flag and `run_one` emits `[flag, value]` pairs, so an axis over it would
+    #: pass an unrecognised positional and die. Every axis in this table must
+    #: name a flag that TAKES a value. (📏 `min_std` pointed at `--min-std`,
+    #: which `train.py` never defined -- that axis had been dead since it was
+    #: written, and it is why this rule is now stated rather than assumed.)
+    "cue_mode": "--cue-mode",
+    #: ⚠️ BLOCK_G lists the curriculum schedule as provisional and never measured.
+    "curriculum_mix": "--curriculum-mix",
     "cadence": "--cadence",
     "arch": "--arch",
     "obs_history": "--obs-history",

@@ -185,7 +185,13 @@ def main() -> None:
             "policy": actor.state_dict(),
             "architecture": actor.architecture,
             "hidden": actor.trunk.out_dim,
-            "min_log_std": actor.min_log_std,
+            "min_log_std": actor.min_log_std.tolist(),
+            # 🔒 Top level for the same reason as `obs_history`: both change
+            # what the network COMPUTES without changing the shape of its
+            # state dict, so a loader that misses them scores a different
+            # function and `load_state_dict` raises nothing.
+            "tanh_mean": bool(getattr(actor, "tanh_mean", True)),
+            "layer_norm": bool(getattr(actor, "layer_norm", False)),
             "timestep": 0,
             # ⚠️ No "value": a BC checkpoint has no critic. `train.py --init-from`
             # loads the actor only and trains a fresh critic, which is correct --

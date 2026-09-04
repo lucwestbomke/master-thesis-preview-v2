@@ -82,20 +82,53 @@ def test_the_knob_list_is_derived_from_the_dataclass_and_not_hand_written():
     assert isinstance(RewardWeights().n_cover_samples, int)
 
 
-def test_objective_weights_get_no_flags_except_the_one_the_design_permits():
+#: 🔒 The objective weights that MAY be set from the command line, each with the
+#: argument that licenses it. ⛔ This is a closed list, and adding to it is a
+#: design decision that belongs in `docs/inherited/DECISIONS.md` -- not a
+#: convenience. Every other objective weight is set by the behavioural orderings
+#: in `weight_constraints_satisfied()` and changing one changes the mission.
+SWEEPABLE_OBJECTIVE_WEIGHTS: dict[str, str] = {
+    "battery_variance": (
+        "lambda -- the single weight docs/REWARD.md's method leaves free, because "
+        "the orderings bound it rather than pinning it"
+    ),
+    "w_difference": (
+        "the difference reward D_i = G(z) - G(z_-i). Licensed by a DIFFERENT "
+        "argument from lambda's, and the distinction is the point: G(z_-i) does "
+        "not depend on a_i at all, so d(D_i)/d(a_i) = d(G)/d(a_i) exactly. D_i is "
+        "FACTORED (Wolpert & Tumer 2002), so every agent's best response to fixed "
+        "others is unchanged and the equilibrium of the team objective cannot "
+        "move. It is not optimum-preserving by the PBRS proof -- it is not inside "
+        "Phi -- which is why it is an objective weight and not a derived flag"
+    ),
+}
+
+
+def test_objective_weights_get_no_flags_except_the_ones_the_design_permits():
     """⛔ Objective weights change what is OPTIMAL. They are set by the
     behavioural orderings in `weight_constraints_satisfied()`, not swept.
-    `battery_variance` (lambda) is the single documented exception."""
+
+    ⚠️ There are now **two** exceptions and they are licensed by two different
+    arguments -- see `SWEEPABLE_OBJECTIVE_WEIGHTS`. The guard is kept as a closed
+    allow-list rather than relaxed to "objective weights may have flags", because
+    the whole value of it is that a third addition has to be argued for.
+    """
     train = _train_module()
     parser = train.build_parser()
     known = {action.dest for action in parser._actions}
 
     for name in OBJECTIVE_WEIGHTS | PHYSICAL_REFERENCES:
-        if name == "battery_variance":
-            assert name in known, "lambda is the one sweepable objective weight"
+        if name in SWEEPABLE_OBJECTIVE_WEIGHTS:
+            assert name in known, (
+                f"{name} is licensed by SWEEPABLE_OBJECTIVE_WEIGHTS but has no flag: "
+                f"{SWEEPABLE_OBJECTIVE_WEIGHTS[name]}"
+            )
             continue
         assert name not in known, f"{name} is an objective weight and must not have a flag"
         assert f"phi_{name}" not in known
+
+    # 🔒 The allow-list may not drift away from the weights it is about.
+    assert set(SWEEPABLE_OBJECTIVE_WEIGHTS) <= OBJECTIVE_WEIGHTS
 
 
 def test_a_reward_that_breaks_a_behavioural_ordering_is_refused():

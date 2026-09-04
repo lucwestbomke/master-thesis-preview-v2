@@ -198,6 +198,40 @@ JAMMED_EGO_IDX: tuple[int, ...] = (18, 22)
 #: `[capacity, clearance]`, so **0** is SINR-derived and **1** is geometry.
 JAMMED_EDGE_IDX: tuple[int, ...] = (0,)
 
+#: Ego features that are **team broadcasts**: one `(B,)` scalar `.expand()`ed
+#: across the drone axis, so `ego[b, i, k] == ego[b, j, k]` for every pair `i, j`
+#: **by construction**, at every state, under every policy.
+#:
+#: * **22** `e2e_capacity` -- `aux["e2e_capacity_mbps"]` is `(B,)`, expanded.
+#: * **23** `steps_since_link` -- `self.steps_since_link` is `(B,)`, expanded.
+#:
+#: 🔍 **Why this is worth a flag, given `results/obs_mask_gate.md` was a null.**
+#: The measured deficit is that roles do not emerge, and a feature identical
+#: across drones **cannot** break symmetry -- it is exactly the kind of input a
+#: policy can only use to condition on TEAM state. 📏 Measured between-drone
+#: standard deviation over 250 steps at stage 4 / F4, under B0 *and* under a
+#: random policy: **0.00000** for both, against 0.42 (`noise_dbm`), 0.42
+#: (`on_path`) and 0.48 (`clr_hvt`). And `e2e_capacity` has the **largest total**
+#: standard deviation in the whole ego block (1.49), so the most salient feature
+#: the policy sees carries no role information at all.
+#:
+#: ⚠️ **Not a claim that they are useless** -- team state is legitimately useful
+#: for deciding *whether* to act. It is a claim that they cannot help decide
+#: *which drone* acts, which is the deficit. Gated, not deleted.
+#: ⛔ `e2e_capacity` is also in `JAMMED_EGO_IDX`, so the two masks overlap by one.
+BROADCAST_EGO_IDX: tuple[int, ...] = (22, 23)
+
+
+def broadcast_flat_indices() -> tuple[int, ...]:
+    """Positions in the packed `(.., FLAT_DIM)` vector that are team broadcasts.
+
+    🔒 The ego block is at the front of `_pack`'s layout, so these are the ego
+    indices unchanged -- but it is derived through the same route
+    `jammed_flat_indices` uses rather than asserted, so a change to `EGO_DIM`
+    surfaces here.
+    """
+    return tuple(i for i in BROADCAST_EGO_IDX if i < EGO_DIM)
+
 
 def jammed_flat_indices() -> tuple[int, ...]:
     """Positions in the packed `(.., FLAT_DIM)` vector the emitter can move.
@@ -482,6 +516,38 @@ class EnvConfig:
     #: ⛔ Off by default; every existing number was measured with it off.
     mask_jammed_obs: bool = False
 
+    #: Zero the ego features that are TEAM BROADCASTS -- see `BROADCAST_EGO_IDX`.
+    #: ⛔ Off by default; every existing number was measured with it off.
+    mask_broadcast_obs: bool = False
+
+    #: What the persistent cue in ego dims 4-6 reports.
+    #:
+    #: 📏 **The measurement this exists for**, over the 1,792 training routes:
+    #: the cue is `hvt_pos` at `t = 0` plus noise, and is **never refreshed**.
+    #: Median `|cue - hvt|` by step:
+    #:
+    #:     t          50     100     150     225     300     450     599
+    #:     |err| m   116     226     322     484     632     864     984
+    #:     bearing    8.6    9.6    11.6    13.6    15.3    17.5    17.8  deg
+    #:
+    #: 🔍 Against a **127 m** along-street sightline median (`BLOCK_B.md`), the
+    #: cue is useless as a POSITION within ~60 steps -- and it is still a
+    #: full-magnitude 3-vector in the observation at `t = 599`, when it points a
+    #: kilometre away. What survives is the **bearing**: 17.8 deg median error at
+    #: the end of an episode, which is what `BLOCK_D.md` meant by *"it decays in
+    #: range rather than in direction"*.
+    #:
+    #: * `"position"` -- `(cue - pos) / POS_SCALE_M`. The shipped behaviour.
+    #: * `"bearing"`  -- the horizontal UNIT vector toward the cue, `z` zeroed.
+    #:   Keeps what survives and drops what decays, at the same width.
+    #: * `"off"`      -- zeros. The ablation.
+    #:
+    #: ⛔ **`src/baselines/b0.py` reads this block** -- its acquisition fan and its
+    #: initial belief are both `cue_rel * POS_SCALE_M` -- so B0 must be scored
+    #: under `"position"` and nowhere else. Same restriction as `mask_jammed_obs`,
+    #: which zeroes the edge capacity B0's link repair hill-climbs on.
+    cue_mode: Literal["position", "bearing", "off"] = "position"
+
     obs_history: int = 1
 
     training_extras: bool = False
@@ -503,6 +569,10 @@ class EnvConfig:
                 raise ValueError(f"duplexing_override must be >= 1, got {self.duplexing_override}")
         if self.radius_m <= 0.0:
             raise ValueError(f"radius_m must be positive, got {self.radius_m}")
+        if self.cue_mode not in ("position", "bearing", "off"):
+            raise ValueError(
+                f"cue_mode must be 'position', 'bearing' or 'off', got {self.cue_mode!r}"
+            )
 
     @property
     def rung(self) -> FidelityRung:
@@ -576,6 +646,7 @@ class BatchedSwarmEnv:
         # Hoisted: building this inside `_observe` would copy host memory every
         # tick, which is the device rule in AGENTS.md.
         self._jammed_idx = torch.tensor(jammed_flat_indices(), dtype=torch.long, device=dev)
+        self._broadcast_idx = torch.tensor(broadcast_flat_indices(), dtype=torch.long, device=dev)
 
         art = np.load(artefact)
         self.boxes = torch.from_numpy(art["building_boxes"]).float().to(dev)
@@ -1181,6 +1252,50 @@ class BatchedSwarmEnv:
         sinr_db = prx_dbm - channel.mw_to_dbm(denom_mw)
         return channel.capacity_mbps(sinr_db, BANDWIDTH_HZ) * self.no_self, jam_mw
 
+    def _capable_without(self, capacity: Tensor, sees: Tensor) -> Tensor:
+        """`(B, N)` -- `mission_capable` for the swarm with drone `i` DELETED.
+
+        The counterfactual half of `reward.difference_reward`. Exact, not an
+        estimate: it re-runs the same routing DP `reward` runs, on a capacity
+        matrix with drone `i`'s row and column zeroed and its sighting removed
+        from the source mask.
+
+        📏 **The cost is negligible and that is the point.** Occlusion is ~99.7 %
+        of the step (`docs/inherited/BLOCK_C.md`) and this touches none of it --
+        `capacity` is already computed. `best_relay_capacity` is `max_hops`
+        iterations of an `amin`/`amax` over an `(B, R, R)` tensor with `R = N + 1
+        = 6`, so `N` copies of it is `N` x a 6x6 kernel. It is folded into ONE
+        call on a `(B * N, R, R)` view rather than looped, so there is no Python
+        loop over drones and no data-dependent shape.
+
+        ⛔ Only called when `weights.w_difference != 0`. Off, it does not run.
+        """
+        cfg = self.cfg
+        b, n, r = cfg.num_envs, cfg.num_drones, cfg.n_radio
+
+        # `keep[i, j]` = 1 unless j is the deleted drone i. Built once per call
+        # on device; `(N, R)`, broadcast over the batch.
+        drones = torch.arange(n, device=self.device)
+        keep = (torch.arange(r, device=self.device).unsqueeze(0) != drones.unsqueeze(1)).to(
+            capacity.dtype
+        )  # (N, R)
+
+        # Zero the deleted drone's row AND column: a deleted node can neither
+        # receive nor forward. `(B, N, R, R)`.
+        cap = capacity.unsqueeze(1) * keep.view(1, n, r, 1) * keep.view(1, n, 1, r)
+        src = torch.cat([sees, torch.zeros_like(sees[:, :1])], dim=1)  # (B, R)
+        src = src.unsqueeze(1) & (keep > 0.5).unsqueeze(0)  # (B, N, R)
+
+        e2e = routing.best_relay_capacity(
+            cap.reshape(b * n, r, r),
+            src.reshape(b * n, r),
+            dst_index=self.mcv_idx,
+            max_hops=r - 1,
+            reuse_limit=cfg.reuse_limit,
+        ).view(b, n)
+        observed = src.any(dim=-1)  # (B, N)
+        return (observed & (e2e >= CAPACITY_THRESHOLD_MBPS)).to(capacity.dtype)
+
     def _evaluate(self) -> tuple[Snapshot, dict[str, Tensor]]:
         """Physics of the *current* state. Pure: advances nothing."""
         cfg = self.cfg
@@ -1224,6 +1339,12 @@ class BatchedSwarmEnv:
             # The one per-drone quantity the reward can use. Only read when
             # `w_relay > 0`; free here, since routing already produced it.
             on_path=on_path[:, :n],
+            # The counterfactual mission term, `(B, N)`. Gated on the weight so
+            # it costs exactly nothing when the difference reward is off, which
+            # is the same discipline `on_path` / `drone_pos` already follow.
+            capable_without=(
+                self._capable_without(capacity, sees) if self.weights.w_difference != 0.0 else None
+            ),
             # Raw geometry for `Phi_cover`, which is a function of where EVERY
             # drone is rather than of a reduction over them -- read only when
             # `w_cover > 0`. Views, not copies: no work when the term is off.
@@ -1319,13 +1440,14 @@ class BatchedSwarmEnv:
         # Radio quantity: the drone's link to the MCV -> the channel's geometry.
         clr_mcv = clearance[:, :n, self.mcv_idx]
         rel_hvt = (self.hvt_pos.unsqueeze(1) - pos) / POS_SCALE_M
+        cue_rel = self._cue_feature(pos)
         noise_dbm = channel.mw_to_dbm(aux["jam_mw"][:, :n] + self.noise_mw)
 
         ego = torch.cat(
             [
                 vel / VEL_SCALE_MS,  # 3  own velocity, INS
                 ((pos[..., 2] - ALT_MIN_M) / (ALT_MAX_M - ALT_MIN_M)).unsqueeze(-1),  # 1
-                (self.cue.unsqueeze(1) - pos) / POS_SCALE_M,  # 3  briefed cue
+                cue_rel,  # 3  briefed cue -- see `EnvConfig.cue_mode`
                 self.battery.unsqueeze(-1),  # 1
                 torch.sigmoid(clr_hvt / SOFT_SEE_TAU_M).unsqueeze(-1),  # 1  soft sees
                 rel_hvt * sees.unsqueeze(-1),  # 3  zeroed when unseen
@@ -1365,6 +1487,13 @@ class BatchedSwarmEnv:
         )
 
         flat = self._pack(ego, neighbour, edge)
+        if cfg.mask_broadcast_obs:
+            # ⚠️ Applied to `flat` for the same reason `mask_jammed_obs` is: the
+            # history buffer, the critic-side bookkeeping and every consumer must
+            # see one view, or the previous frames hand the loop back through
+            # time. The two masks overlap at index 22 and `index_fill` is
+            # idempotent, so order does not matter.
+            flat = flat.index_fill(-1, self._broadcast_idx, 0.0)
         if cfg.mask_jammed_obs:
             # ⚠️ Applied to `flat` itself, so `flat_history`, the critic-side
             # bookkeeping and every consumer see the same masked view. Masking
@@ -1381,6 +1510,33 @@ class BatchedSwarmEnv:
         if cfg.obs_history > 1:
             out["flat_history"] = self._flat_hist
         return out
+
+    def _cue_feature(self, pos: Tensor) -> Tensor:
+        """`(B, N, 3)` -- what ego dims 4-6 report. See `EnvConfig.cue_mode`.
+
+        🔒 Always three wide, whatever the mode, so `EGO_DIM`, `FLAT_DIM`,
+        `unpack_flat`, every checkpoint and the rollout buffer are untouched. The
+        only thing that changes is the information content -- the same discipline
+        `mask_jammed_obs` follows, and the reason a mode can be swept without
+        rebuilding anything.
+        """
+        rel = (self.cue.unsqueeze(1) - pos) / POS_SCALE_M
+        mode = self.cfg.cue_mode
+        if mode == "position":
+            return rel
+        if mode == "off":
+            return torch.zeros_like(rel)
+        # "bearing": the horizontal unit vector, `z` dropped.
+        #
+        # 📏 The cue's RANGE decays (median error 984 m by t = 599, against a
+        # 127 m sightline median) while its BEARING does not (17.8 deg median at
+        # the same step). This reports the half that survives. The `z` component
+        # is dropped rather than kept because it is a constant: `cue_z` has a
+        # total standard deviation of 0.0117 across a whole rollout, the target
+        # being pinned to the ground at `HVT_Z_M`.
+        xy = rel[..., :2]
+        unit = xy / xy.norm(dim=-1, keepdim=True).clamp_min(1e-6)
+        return torch.cat([unit, torch.zeros_like(rel[..., 2:])], dim=-1)
 
     def _push_history(self, flat: Tensor, reset_mask: Tensor | None = None) -> Tensor:
         """Advance the history by one frame. ⛔ Call EXACTLY once per transition.

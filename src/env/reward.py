@@ -78,6 +78,46 @@ class RewardWeights:
     energy: float = 0.15  # relative to hover power
     battery_variance: float = 0.5  # lambda -- the ONLY swept weight
     effort: float = 0.01  # control-effort heuristic, deliberately tiny
+    #: **The difference reward** (Wolpert & Tumer 2002; Agogino & Tumer 2008),
+    #: `D_i = G(z) - G(z_{-i})`: the mission term recomputed with drone `i`
+    #: deleted from the swarm. 0.0 = off and the reward is then byte-identical to
+    #: the shipped one.
+    #:
+    #: 🔍 **Why this and not another shaping knob.**
+    #: `results/credit_assignment.md` closed the reward axis *structurally*:
+    #: `reward_terms()` returns `mission`, `idle`, `battery_variance` and
+    #: `shaping` through `team(x)`, so they are identical across drones **by
+    #: construction** and cancel from `Var_i(A)` **exactly**. 📏 The measured
+    #: between-drone share of return variance is **0.04-0.16 %** on every policy
+    #: including B0 and random. No knob that scales a team term can move it,
+    #: which retro-predicts all eight of `PLAN.md` §3's nulls.
+    #:
+    #: ⛔ And a per-drone *critic* cannot fix it either, for a reason that file
+    #: states but does not draw out: `A_i = G_i - V`, and `G_i` is itself ~99.9 %
+    #: identical across drones. An agent-specific value head has nothing to fit.
+    #: **Per-agent credit cannot be extracted from a per-team return.** The
+    #: return has to change.
+    #:
+    #: 🔒 **The property that makes this safe.** `G(z_{-i})` does not depend on
+    #: `a_i` at all -- drone `i` is deleted from the routing DP and from the
+    #: observation OR -- so `d(D_i)/d(a_i) = d(G)/d(a_i)` exactly. `D_i` is
+    #: *factored*: every agent's best response to fixed others is unchanged, so
+    #: adding it cannot move the equilibrium of the team objective. What it does
+    #: move is the signal-to-noise: the observer's `D` is large (delete it and
+    #: `observed` dies), a relay carrying the path has `D > 0`, and a redundant
+    #: drone has `D = 0`.
+    #:
+    #: ⚠️ **The honest caveat.** Factoredness is exact per step. Over a
+    #: trajectory `G(z_{-i})(s_t)` depends on the joint state, which drone `i`'s
+    #: *past* actions influenced, so the discounted sum is only approximately
+    #: factored. That is the standard difference-reward caveat and it is stated
+    #: rather than hidden.
+    #:
+    #: ⚠️ It is an OBJECTIVE weight, not a `Phi` term -- it is not
+    #: optimum-preserving by the PBRS proof, it is best-response-preserving by
+    #: the argument above. That is why it is in `OBJECTIVE_WEIGHTS` and gets an
+    #: explicit flag in `scripts/train.py` rather than a derived one.
+    w_difference: float = 0.0
 
     # --- potential: guidance only, provably optimum-preserving ---
     potential_scale: float = 10.0  # k: full swing worth ~10 steps of mission
@@ -165,7 +205,9 @@ DEFAULT_WEIGHTS = RewardWeights()
 #: OPTIMAL, so they are pinned by the behavioural orderings in
 #: `weight_constraints_satisfied()` and are not sweepable. `battery_variance`
 #: (lambda) is the single exception the design permits.
-OBJECTIVE_WEIGHTS = frozenset({"mission", "idle", "energy", "battery_variance", "effort"})
+OBJECTIVE_WEIGHTS = frozenset(
+    {"mission", "idle", "energy", "battery_variance", "effort", "w_difference"}
+)
 
 #: Physical constants used for normalisation. Not a tuning knob either.
 PHYSICAL_REFERENCES = frozenset({"max_accel_ms2"})
@@ -259,6 +301,11 @@ class Snapshot:
     #: the difference. Only read when `w_hold > 0`; optional so the reward's
     #: own tests can build a Snapshot without it.
     observer_dist_m: torch.Tensor | None = None
+    #: (B, N) -- `mission_capable` for the swarm with drone `i` DELETED, in
+    #: {0, 1}. The counterfactual half of the difference reward; supplied by
+    #: `core._evaluate` and read only when `w_difference > 0`, so it costs
+    #: nothing when the term is off.
+    capable_without: torch.Tensor | None = None
     #: (B, N) bool -- is drone `i` carrying the delivery path this step? The one
     #: per-drone quantity the reward uses, and only when `w_relay > 0`.
     on_path: torch.Tensor | None = None
@@ -640,6 +687,44 @@ def mission_capable(snap: Snapshot) -> torch.Tensor:
     return snap.observed & (snap.e2e_capacity_mbps >= CAPACITY_THRESHOLD_MBPS)
 
 
+def difference_reward(snap: Snapshot, w: RewardWeights) -> torch.Tensor:
+    """(B, N) per-drone `w_difference * (G - G_without_i)` on the mission term.
+
+    `G` here is `mission_capable`, the dominant objective term and the headline
+    metric, so `D_i` is denominated in the same unit as `w.mission`: one step of
+    full mission capability. `D_i = 1` means *the swarm is capable and would not
+    be without this drone*; `D_i = 0` means *this drone is currently redundant*.
+
+    🔒 **`D_i` is non-negative, and that is a property of the router rather than
+    a clamp.** `routing.best_relay_capacity` maximises over every chain up to
+    `max_hops`, *including the shorter ones*, so deleting a node only removes
+    options: `e2e(z) >= e2e(z_{-i})` and `observed(z) >= observed(z_{-i})`, hence
+    `D_i in {0, 1}`. 📏 Measured under B0 at stage 4 / F4 / J1, 32 envs x 120
+    steps: **0.0 %** of `(env, drone)` pairs negative. ⚠️ It would NOT hold under
+    a router that fixed the hop count -- the `min(hops, 3)` division would then
+    let an extra relay cost rate -- so this is pinned by a test rather than
+    assumed.
+
+    🔍 So `D_i` reads as one bit: **is this drone pivotal for the mission right
+    now?** 📏 Under B0 it is 1 for **8.75 %** of `(env, drone)` pairs while the
+    team is capable **93.75 %** of the time -- i.e. `mission` is on for all five
+    drones and `D` is on for the ~0.44 that are actually load-bearing. That gap
+    is the entire content of the term.
+
+    🔒 Returns zeros when the term is off, without touching `capable_without`,
+    so a `Snapshot` built by hand in a test need not supply it.
+    """
+    if w.w_difference == 0.0:
+        return torch.zeros_like(snap.battery)
+    if snap.capable_without is None:
+        raise ValueError(
+            "w_difference != 0 needs Snapshot.capable_without; the env supplies it "
+            "when weights.w_difference is non-zero, a hand-built Snapshot must too"
+        )
+    capable = mission_capable(snap).to(snap.battery.dtype)
+    return w.w_difference * (capable.unsqueeze(-1) - snap.capable_without.to(snap.battery.dtype))
+
+
 def team_reward(snap: Snapshot, w: RewardWeights) -> torch.Tensor:
     """(B,) terms that are properties of the swarm, not of any one drone."""
     capable = mission_capable(snap).to(snap.e2e_capacity_mbps.dtype)
@@ -679,6 +764,7 @@ def reward(
         team.unsqueeze(-1)
         + individual_reward(snap, w, craft)
         + relay_shaping(snap, next_snap, w, gamma, next_is_terminal)
+        + difference_reward(snap, w)
     )
 
 
@@ -779,4 +865,5 @@ def reward_terms(
         "energy": -w.energy * power / hover_reference_power_w(craft),
         "effort": -w.effort * (snap.accel_ms2 / w.max_accel_ms2) ** 2,
         "relay": relay_shaping(snap, next_snap, w, gamma, next_is_terminal),
+        "difference": difference_reward(snap, w),
     }

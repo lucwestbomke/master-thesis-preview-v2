@@ -131,9 +131,7 @@ def b0_config(overrides: list[str]) -> B0Config:
         key, _, raw = item.partition("=")
         key = key.strip()
         if key not in fields:
-            raise SystemExit(
-                f"unknown B0Config field {key!r}; known: {', '.join(sorted(fields))}"
-            )
+            raise SystemExit(f"unknown B0Config field {key!r}; known: {', '.join(sorted(fields))}")
         current = getattr(B0Config(), key)
         kw[key] = raw if isinstance(current, str) else type(current)(raw)
     return dataclasses.replace(B0Config(), **kw)
@@ -190,6 +188,10 @@ def load_actor(path: Path, env: BatchedSwarmEnv) -> tuple[SwarmActor, dict]:
         architecture=blob["architecture"],
         hidden=blob.get("hidden"),
         min_log_std=blob.get("min_log_std", -20.0),
+        # ⚠️ Defaults are the PRE-change behaviour, so an old checkpoint
+        # still loads as the network it was trained as.
+        tanh_mean=blob.get("tanh_mean", True),
+        layer_norm=blob.get("layer_norm", False),
         obs_history=blob.get("obs_history", 1),
     ).to(env.device)
     if blob.get("obs_history", 1) != env.cfg.obs_history:

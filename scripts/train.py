@@ -117,6 +117,28 @@ def build_parser() -> argparse.ArgumentParser:
         "-- a policy that can still adapt, but not on what it is attacked through",
     )
     ap.add_argument(
+        "--mask-broadcast-obs",
+        action="store_true",
+        help="zero the ego features that are TEAM BROADCASTS (e2e_capacity, "
+        "steps_since_link). 📏 Both have a between-drone standard deviation of "
+        "EXACTLY 0.00000 under B0 and under a random policy alike -- they are "
+        "`(B,)` scalars `.expand()`ed across the drone axis -- so they cannot "
+        "break symmetry, which is the measured deficit. ⚠️ e2e_capacity is also "
+        "the highest-variance ego feature there is (total std 1.49)",
+    )
+    ap.add_argument(
+        "--cue-mode",
+        default="position",
+        choices=["position", "bearing", "off"],
+        help="what the persistent briefed cue in ego dims 4-6 reports. 📏 The cue "
+        "is hvt_pos at t=0 and is NEVER refreshed: median |cue - hvt| is 322 m at "
+        "t=150 and 984 m at t=599, against a 127 m along-street sightline median "
+        "-- so as a POSITION it is stale within ~60 steps. Its BEARING survives "
+        "(17.8 deg median error at t=599). `bearing` reports the horizontal unit "
+        "vector only; `off` zeroes it. ⛔ B0 reads this block, so it must be "
+        "scored under `position`",
+    )
+    ap.add_argument(
         "--obs-history",
         type=int,
         default=1,
@@ -173,6 +195,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--no-curriculum", action="store_true")
     ap.add_argument("--stage", type=int, default=4, help="fixed stage when --no-curriculum")
+    ap.add_argument(
+        "--curriculum-boundaries",
+        type=float,
+        nargs=3,
+        default=None,
+        help="progress fractions at which stages 2/3/4 become the focus; default "
+        "(0.15, 0.35, 0.60). ⚠️ docs/inherited/BLOCK_G.md lists the schedule as "
+        "PROVISIONAL and never measured. 📏 And STAGES[0] is degenerate: "
+        "speed_scale 0.0 and cue_sigma_m 0.0 means the target does not move and "
+        "the cue points at it EXACTLY, so stage 1 is solvable by a linear policy "
+        "on cue_rel -- 15 %% of training plus a 20 %% mix thereafter, teaching a "
+        "shortcut that is a median 984 m wrong by t = 599",
+    )
+    ap.add_argument(
+        "--curriculum-mix",
+        type=float,
+        default=None,
+        help="share of episodes drawn from EARLIER stages once past stage 1; "
+        "default 0.20",
+    )
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument(
         "--gae-lambda",
@@ -190,9 +232,62 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("--entropy", type=float, default=0.0, help="entropy_loss_scale")
     ap.add_argument(
+        "--mini-batch-size",
+        type=int,
+        default=None,
+        help="ROWS per gradient step, set directly instead of via --mini-batches. "
+        "☠️ The axis this project froze. docs/inherited/BLOCK_G.md held 'gradient "
+        "density constant at 488 optimizer steps per M env-steps' across all three "
+        "cadences, which forces the minibatch to 40,960 rows in every one of them. "
+        "At `deep`, a 12 M-step run is 46 PPO updates and ~5,900 Adam steps total on "
+        "a 137 k-parameter actor. 📏 runs/val-gnn-deep-s*/log.jsonl show approx_kl at "
+        "0.002-0.004 throughout, against PPO's usual 0.01-0.02. Shrinking this costs "
+        "almost no FLOPs and multiplies the gradient-step count by the same factor",
+    )
+    ap.add_argument(
+        "--lr-critic",
+        type=float,
+        default=None,
+        help="critic learning rate; default = --lr, which is the inherited single "
+        "Adam over both parameter sets",
+    )
+    ap.add_argument(
+        "--grad-norm-clip-critic",
+        type=float,
+        default=None,
+        help="separate gradient-norm clip for the critic. Default (unset) keeps the "
+        "inherited JOINT clip, which docs/inherited/BLOCK_G.md lists as open and "
+        "untested: with value_loss_scale 2.5 a large value gradient throttles the "
+        "policy gradient. ⚠️ `grad_kept` is instrumented for it and is NaN in every "
+        "log in runs/ -- it has never been read",
+    )
+    ap.add_argument(
+        "--target-kl",
+        type=float,
+        default=0.0,
+        help="adaptive actor LR targeting this per-round KL (0 = off, the inherited "
+        "behaviour). 0.015 is the usual MAPPO target",
+    )
+    ap.add_argument(
+        "--w-difference",
+        type=float,
+        default=None,
+        help="weight on the DIFFERENCE REWARD D_i = G - G_without_i, the mission term "
+        "recomputed with drone i deleted (Wolpert & Tumer 2002). 0.0 ships and the "
+        "reward is then byte-identical. 🔍 The one instrument that changes the RETURN "
+        "rather than scaling a team term that cancels exactly: results/"
+        "credit_assignment.md closed the reward axis structurally, and D_i is "
+        "factored (G(z_-i) does not depend on a_i) so it cannot move the equilibrium. "
+        "📏 Measured on B0 with scripts/measure_credit.py: differentiable_share "
+        "0.09 %% -> 5.2 / 15.5 / 35.6 %% at w = 0.5 / 1.0 / 2.0. ⚠️ An OBJECTIVE "
+        "weight, not a Phi term, which is why it is spelled out here like "
+        "--battery-variance rather than derived",
+    )
+    ap.add_argument(
         "--min-log-std",
         type=float,
-        default=-20.0,
+        nargs="+",
+        default=[-20.0],
         dest="min_std",
         help="floor on log(sigma) -- a LOG value, not a standard deviation. "
         "-1.6 gives sigma >= 0.20; -20 is no floor and is what the inherited "
@@ -202,7 +297,38 @@ def build_parser() -> argparse.ArgumentParser:
         "flag was spelled `--min-std 0.2` and it is not recorded whether that "
         "was a log value or a sigma; this one is unambiguous",
     )
-    ap.add_argument("--initial-log-std", type=float, default=-0.5)
+    ap.add_argument(
+        "--initial-log-std",
+        type=float,
+        nargs="+",
+        default=[-0.5],
+        help="one value, or one PER ACTION DIMENSION (x y z). 📏 The z axis is "
+        "very nearly dead -- B0's mean |a_z| is 0.006 with std 0.053 against "
+        "0.46 / 0.52 on x / y -- because altitude has a constant optimum at the "
+        "derived ALT_MAX_M ceiling. A scalar sigma spends a third of the "
+        "exploration budget there and pays twice: `energy` charges climb power "
+        "and leaving the ceiling costs sightlines",
+    )
+    ap.add_argument(
+        "--no-tanh-mean",
+        action="store_true",
+        help="emit the head's RAW output as the Gaussian mean; core._advance_drones "
+        "already clamps to [-1, 1], so the bound is unchanged and only the density "
+        "moves. 📏 B0 saturates at least one axis on 32.6 %% of steps (x 15.0, "
+        "y 19.8), which a tanh mean reaches only asymptotically -- the same "
+        "obstacle that made scripts/bc_init.py clip its targets to +-0.995",
+    )
+    ap.add_argument(
+        "--orthogonal-init",
+        action="store_true",
+        help="the PPO reference initialisation (orthogonal, gain sqrt(2); policy "
+        "head at 0.01). ⚠️ Absent from every run in this project's history",
+    )
+    ap.add_argument(
+        "--layer-norm",
+        action="store_true",
+        help="LayerNorm before each hidden activation in the actor trunk",
+    )
     ap.add_argument("--no-shuffle", action="store_true", help="reproduce skrl's minibatch order")
     ap.add_argument("--no-value-norm", action="store_true")
     ap.add_argument(
@@ -245,6 +371,8 @@ def build_weights(a: argparse.Namespace) -> RewardWeights:
     }
     if a.battery_variance is not None:
         overrides["battery_variance"] = a.battery_variance
+    if a.w_difference is not None:
+        overrides["w_difference"] = a.w_difference
     weights = dataclasses.replace(weights, **overrides)
 
     failed = [k for k, ok in weight_constraints_satisfied(weights).items() if not ok]
@@ -254,6 +382,18 @@ def build_weights(a: argparse.Namespace) -> RewardWeights:
             f"ranks known policy pairs correctly: {failed}"
         )
     return weights
+
+
+def _schedule(a: argparse.Namespace) -> CurriculumSchedule:
+    """The shipped schedule unless a flag moves it. ⛔ Still a pure function of
+    training progress -- `AGENTS.md` forbids adaptive advancement in a reported
+    run, and nothing here gives the schedule a channel to the return."""
+    kw = {}
+    if a.curriculum_boundaries is not None:
+        kw["boundaries"] = tuple(a.curriculum_boundaries)
+    if a.curriculum_mix is not None:
+        kw["mix"] = a.curriculum_mix
+    return CurriculumSchedule(**kw)
 
 
 def resolve_device(name: str) -> torch.device:
@@ -282,6 +422,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
             num_drones=a.num_drones,
             obs_history=a.obs_history,
             mask_jammed_obs=a.mask_jammed_obs,
+            mask_broadcast_obs=a.mask_broadcast_obs,
+            cue_mode=a.cue_mode,
             device=str(a.device),
             seed=seed,
             fidelity=a.fidelity,
@@ -304,6 +446,9 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         initial_log_std=a.initial_log_std,
         min_log_std=a.min_std,
         obs_history=a.obs_history,
+        tanh_mean=not a.no_tanh_mean,
+        orthogonal_init=a.orthogonal_init,
+        layer_norm=a.layer_norm,
     ).to(a.device)
     init_from = None
     if a.init_from is not None:
@@ -330,6 +475,10 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         value_clip=a.value_clip,
         shuffle_minibatches=not a.no_shuffle,
         normalise_values=not a.no_value_norm,
+        mini_batch_size=a.mini_batch_size,
+        learning_rate_critic=a.lr_critic,
+        grad_norm_clip_critic=a.grad_norm_clip_critic,
+        target_kl=a.target_kl,
     )
     trainer = PPOTrainer(
         env,
@@ -337,7 +486,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         critic,
         ppo,
         total_timesteps=a.timesteps,
-        curriculum=None if a.no_curriculum else CurriculumSchedule(),
+        curriculum=None if a.no_curriculum else _schedule(a),
         seed=init_seed,
         diagnostics=mission_diagnostics,
     )
@@ -363,17 +512,29 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "jammer": a.jammer,
         "split": "eval" if a.eval_routes else "train",
         "curriculum": not a.no_curriculum,
+        "curriculum_boundaries": None if a.no_curriculum else list(_schedule(a).boundaries),
+        "curriculum_mix": None if a.no_curriculum else _schedule(a).mix,
         "stage": None if not a.no_curriculum else a.stage,
         "lr": a.lr,
+        "lr_critic": a.lr_critic,
+        "mini_batch_size": a.mini_batch_size,
+        "grad_norm_clip_critic": a.grad_norm_clip_critic,
+        "target_kl": a.target_kl,
         "gae_lambda": a.gae_lambda,
         "grad_norm_clip": a.grad_norm_clip,
         "min_log_std": a.min_std,
+        "initial_log_std": a.initial_log_std,
+        "tanh_mean": not a.no_tanh_mean,
+        "orthogonal_init": a.orthogonal_init,
+        "layer_norm": a.layer_norm,
         "entropy_loss_scale": a.entropy,
         "shuffle_minibatches": not a.no_shuffle,
         "value_clip": a.value_clip,
         "init_from": init_from,
         "obs_history": a.obs_history,
         "mask_jammed_obs": a.mask_jammed_obs,
+        "mask_broadcast_obs": a.mask_broadcast_obs,
+        "cue_mode": a.cue_mode,
         "actor_params": parameter_count(actor),
         "critic_params": parameter_count(critic),
         "weights": dataclasses.asdict(weights),

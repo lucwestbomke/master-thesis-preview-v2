@@ -16,6 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +39,22 @@ from src.env.core import (
 def make(mask: bool, num_envs: int = 4):
     return BatchedSwarmEnv(
         EnvConfig(num_envs=num_envs, num_drones=5, device="cpu", seed=0, mask_jammed_obs=mask)
+    )
+
+
+def _env(num_envs: int = 8, **kw) -> BatchedSwarmEnv:
+    """A deterministic stage-4 env for the observation-content tests below."""
+    return BatchedSwarmEnv(
+        EnvConfig(
+            num_envs=num_envs,
+            num_drones=5,
+            device="cpu",
+            seed=0,
+            auto_reset=False,
+            compile_occlusion=False,
+            stage_weights=(0.0, 0.0, 0.0, 1.0),
+            **kw,
+        )
     )
 
 
@@ -144,3 +161,80 @@ def test_the_derivation_survives_a_layout_change() -> None:
     }
     assert set(jammed_flat_indices()) == want
     assert max(jammed_flat_indices()) < FLAT_DIM
+
+
+# --------------------------------------------------------------------------- #
+# `mask_broadcast_obs` and `cue_mode`, added 2026-09-04.
+#
+# Same discipline as the jammed mask above: the whole experiment is void if the
+# wrong columns move, and a wrong column is silent.
+# --------------------------------------------------------------------------- #
+
+
+def test_broadcast_indices_are_the_features_that_are_provably_identical_per_drone():
+    """🔒 Derived from `unpack_flat`, not hand-written, and checked against the
+    property that defines them: `ego[b, i, k] == ego[b, j, k]` for every pair of
+    drones, at every state, because both are `(B,)` scalars `.expand()`ed across
+    the drone axis."""
+    from src.env.core import BROADCAST_EGO_IDX, broadcast_flat_indices
+
+    env = _env()
+    obs = env.reset()
+    for _ in range(20):
+        obs, *_ = env.step(torch.zeros(env.cfg.num_envs, env.cfg.num_drones, 3))
+    ego = unpack_flat(obs["flat"])["ego"]
+
+    spread = ego.std(dim=1)  # across drones, (B, EGO_DIM)
+    identical = {k for k in range(EGO_DIM) if float(spread[:, k].max()) == 0.0}
+    assert set(BROADCAST_EGO_IDX) <= identical, (
+        f"declared broadcast features that are NOT identical across drones: "
+        f"{set(BROADCAST_EGO_IDX) - identical}"
+    )
+    # the ego block sits at the front of `_pack`, so the flat indices coincide
+    assert broadcast_flat_indices() == BROADCAST_EGO_IDX
+    assert all(i < EGO_DIM for i in broadcast_flat_indices())
+
+
+def test_the_broadcast_mask_zeroes_those_columns_and_only_those():
+    from src.env.core import broadcast_flat_indices
+
+    plain, masked = _env(), _env(mask_broadcast_obs=True)
+    a, b = plain.reset()["flat"], masked.reset()["flat"]
+    idx = list(broadcast_flat_indices())
+    assert (b[..., idx] == 0.0).all()
+    others = [i for i in range(a.shape[-1]) if i not in idx]
+    assert torch.equal(a[..., others], b[..., others])
+
+
+def test_cue_mode_changes_only_the_cue_block_and_keeps_the_width():
+    """🔒 Three wide in every mode, so `EGO_DIM`, `FLAT_DIM`, `unpack_flat`, the
+    rollout buffer and every checkpoint are untouched."""
+    egos = {}
+    for mode in ("position", "bearing", "off"):
+        env = _env(cue_mode=mode)
+        egos[mode] = unpack_flat(env.reset()["flat"])["ego"]
+
+    for mode, ego in egos.items():
+        assert ego.shape[-1] == EGO_DIM, mode
+        others = [i for i in range(EGO_DIM) if not 4 <= i < 7]
+        # At reset every mode starts from the same state, so only 4:7 may differ.
+        assert torch.equal(ego[..., others], egos["position"][..., others]), mode
+
+    assert (egos["off"][..., 4:7] == 0.0).all()
+    # `bearing` is a horizontal UNIT vector with z dropped
+    bearing = egos["bearing"][..., 4:7]
+    assert (bearing[..., 2] == 0.0).all()
+    assert torch.allclose(
+        bearing[..., :2].norm(dim=-1), torch.ones_like(bearing[..., 0]), atol=1e-5
+    )
+    # and it points the same way the position vector does
+    pos_xy = egos["position"][..., 4:6]
+    unit = pos_xy / pos_xy.norm(dim=-1, keepdim=True).clamp_min(1e-9)
+    assert torch.allclose(unit, bearing[..., :2], atol=1e-4)
+
+
+def test_an_unknown_cue_mode_is_refused_at_construction():
+    """A typo must not silently fall through to the shipped behaviour and be
+    reported as a measured arm."""
+    with pytest.raises(ValueError, match="cue_mode"):
+        EnvConfig(num_envs=1, cue_mode="bearings")

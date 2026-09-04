@@ -200,3 +200,108 @@ def test_the_models_are_plain_modules_with_no_framework_base_class():
         bases = {b.__module__.split(".")[0] for b in cls.__mro__} - {"builtins"}
         assert bases <= {"torch", "src", "models"}, (cls, bases)
     assert "skrl" not in {m.split(".")[0] for m in list(__import__("sys").modules)}
+
+
+# --------------------------------------------------------------------------- #
+# The optimisation-recipe knobs added 2026-09-04. Every one ships OFF, and the
+# tests here are mostly about that: a default build must be the network every
+# number in `results/` was measured on.
+# --------------------------------------------------------------------------- #
+
+
+def test_every_new_knob_ships_off_so_the_default_build_is_the_inherited_one():
+    """⛔ `tanh_mean`, `orthogonal_init` and `layer_norm` all change what the
+    network computes. If any defaulted ON, every inherited number would silently
+    belong to a different function."""
+    actor = SwarmActor()
+    assert actor.tanh_mean is True
+    assert actor.layer_norm is False
+    assert not any(isinstance(m, torch.nn.LayerNorm) for m in actor.modules())
+
+    torch.manual_seed(0)
+    plain = SwarmActor(architecture="gnn")
+    torch.manual_seed(0)
+    explicit = SwarmActor(
+        architecture="gnn", tanh_mean=True, orthogonal_init=False, layer_norm=False
+    )
+    for a, b in zip(plain.parameters(), explicit.parameters(), strict=True):
+        assert torch.equal(a, b)
+
+
+def test_the_unsquashed_mean_can_reach_the_corners_the_squashed_one_cannot():
+    """📏 B0 saturates at least one action axis on 32.6 % of steps. `tanh` gets
+    there only asymptotically, so the squashed mean must push `|head|` toward
+    infinity to imitate it -- the obstacle `scripts/bc_init.py` clips around."""
+    flat = flat_batch()
+    squashed, raw = SwarmActor(tanh_mean=True), SwarmActor(tanh_mean=False)
+    raw.load_state_dict(squashed.state_dict())  # same weights, one flag apart
+
+    with torch.no_grad():
+        # Scale the head so its largest raw output is exactly 3.0 -- a realistic
+        # magnitude, and deliberately NOT one that saturates `tanh` to float32
+        # 1.0, which would make the comparison vacuous rather than informative.
+        scale = 3.0 / raw(flat)[0].abs().max()
+        for actor in (squashed, raw):
+            actor.head.weight.mul_(scale)
+            actor.head.bias.mul_(scale)
+    m_squashed, m_raw = squashed(flat)[0], raw(flat)[0]
+    assert m_squashed.abs().max() < 1.0
+    assert m_raw.abs().max() > 1.0
+    assert torch.allclose(m_squashed, torch.tanh(m_raw))
+
+    # 🔍 The cost, stated as the arithmetic that drives it: `atanh` is what the
+    # head has to reach for a given mean, and it diverges. B0's saturated
+    # actions are at 1.0 exactly, so a squashed policy can only chase them.
+    head_needed = torch.atanh(torch.tensor([0.9, 0.99, 0.999, 0.9999]))
+    assert head_needed.tolist() == pytest.approx([1.472, 2.646, 3.800, 4.952], abs=1e-3)
+    # ⚠️ The BOUND is unchanged either way -- `core._advance_drones` clamps -- so
+    # only the density the PPO ratio uses moves.
+
+
+def test_the_log_std_floor_may_be_set_per_action_dimension():
+    """📏 The z axis is nearly dead (B0: mean |a_z| 0.006, std 0.053) because
+    altitude has a constant optimum at the derived ceiling. A scalar floor
+    spends a third of the exploration budget there; a vector floor does not."""
+    actor = SwarmActor(initial_log_std=[-0.5, -0.5, -3.0], min_log_std=[-1.6, -1.6, -5.0])
+    _, log_std = actor(flat_batch())
+    assert log_std.shape == (3,)
+    assert torch.allclose(log_std, torch.tensor([-0.5, -0.5, -3.0]))
+    # a scalar still broadcasts, and so does a one-element sequence
+    assert torch.allclose(SwarmActor(min_log_std=-1.6).min_log_std, torch.full((3,), -1.6))
+    assert torch.allclose(SwarmActor(min_log_std=[-1.6]).min_log_std, torch.full((3,), -1.6))
+    with pytest.raises(ValueError, match="min_log_std"):
+        SwarmActor(min_log_std=[-1.0, -2.0])
+
+
+def test_the_per_dimension_floor_binds_dimension_by_dimension():
+    """A floor that only ever applied the tightest of the three would silently
+    make the vector form useless."""
+    actor = SwarmActor(initial_log_std=-9.0, min_log_std=[-1.0, -2.0, -8.0])
+    _, log_std = actor(flat_batch())
+    assert torch.allclose(log_std, torch.tensor([-1.0, -2.0, -8.0]))
+
+
+def test_orthogonal_init_gives_the_policy_head_a_small_gain():
+    """The head is initialised separately and much smaller than the trunk, so the
+    initial mean sits near zero rather than committing to a direction before any
+    data has arrived."""
+    actor = SwarmActor(architecture="gnn", orthogonal_init=True, head_gain=0.01)
+    assert actor.head.weight.std() < 0.01
+    assert torch.equal(actor.head.bias, torch.zeros_like(actor.head.bias))
+    # The trunk is orthogonal at gain sqrt(2). ⚠️ A `(out, in)` weight with
+    # `out > in` can only be orthonormal along the SMALLER axis -- `W @ W.T` is
+    # rank-deficient there -- so the Gram matrix is taken over `in`.
+    first = next(m for m in actor.trunk.modules() if isinstance(m, torch.nn.Linear))
+    w = first.weight
+    gram = w.T @ w if w.shape[0] >= w.shape[1] else w @ w.T
+    assert torch.allclose(gram, torch.eye(gram.shape[0]) * 2.0, atol=1e-4)  # gain^2
+
+
+def test_layer_norm_is_inserted_before_each_hidden_activation_and_nowhere_else():
+    """It must not land on the OUTPUT layer of a trunk MLP -- that would
+    normalise away the scale the next block reads."""
+    actor = SwarmActor(architecture="gnn", layer_norm=True)
+    layers = list(actor.trunk.ego)
+    assert isinstance(layers[-1], torch.nn.Linear), "no norm or activation after the output"
+    norms = [i for i, m in enumerate(layers) if isinstance(m, torch.nn.LayerNorm)]
+    assert norms and all(isinstance(layers[i + 1], torch.nn.Tanh) for i in norms)

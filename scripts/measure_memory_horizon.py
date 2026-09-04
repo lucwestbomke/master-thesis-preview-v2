@@ -109,6 +109,10 @@ def rollout(a, seed: int) -> tuple[np.ndarray, np.ndarray]:
             architecture=blob["architecture"],
             hidden=blob.get("hidden"),
             min_log_std=blob.get("min_log_std", -20.0),
+            # ⚠️ Defaults are the PRE-change behaviour, so an old checkpoint
+            # still loads as the network it was trained as.
+            tanh_mean=blob.get("tanh_mean", True),
+            layer_norm=blob.get("layer_norm", False),
         ).to(env.device)
         actor.load_state_dict(blob["policy"])
         actor.eval()

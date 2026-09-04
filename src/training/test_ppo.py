@@ -205,7 +205,17 @@ def test_the_swarm_is_one_shared_agent_over_num_envs_times_n_rows():
     )
     assert trainer.rows == 8 * 3
     assert trainer.buf["obs"].shape == (4, 24, 108)
-    assert len(trainer.optimizer.param_groups) == 1
+    # 🔒 The invariant is "no PER-AGENT bookkeeping", not "one optimizer object".
+    # There are two -- one per NETWORK, so the critic can have its own LR and its
+    # own gradient clip -- and each holds a single parameter group covering that
+    # network exactly once. N = 3 drones must not produce 3 of anything.
+    assert len(trainer.actor_optimizer.param_groups) == 1
+    assert len(trainer.critic_optimizer.param_groups) == 1
+    actor_ids = {id(p) for p in trainer.actor_optimizer.param_groups[0]["params"]}
+    critic_ids = {id(p) for p in trainer.critic_optimizer.param_groups[0]["params"]}
+    assert actor_ids == {id(p) for p in trainer.actor.parameters()}
+    assert critic_ids == {id(p) for p in trainer.critic.parameters()}
+    assert not (actor_ids & critic_ids)
 
     # the critic's state is the SAME row repeated per drone -- the measured
     # property `scripts/probe_credit.py` found, kept deliberately

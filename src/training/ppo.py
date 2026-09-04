@@ -197,6 +197,51 @@ class PPOConfig:
     entropy_loss_scale: float = 0.0
     grad_norm_clip: float = 0.5
     kl_threshold: float = 0.0  # 0 disables early stopping
+
+    # -- the optimisation budget. 🔒 Every default here reproduces the inherited
+    # runs exactly; each is a knob that has NEVER been varied in this project. --
+    #
+    # ☠️ **The frozen axis.** `docs/inherited/BLOCK_G.md` chose three cadences
+    # holding "gradient density constant at 488 optimizer steps per M env-steps"
+    # and noted, without following it up, that this forces
+    # **the minibatch to 40,960 rows in all three**. At the `deep` cadence a
+    # 12 M-step run is therefore
+    #
+    #     12e6 / (4096 * 64)              =    46 PPO updates
+    #     46 * 4 epochs * 32 minibatches  = 5,888 Adam steps, total
+    #
+    # on a 137 k-parameter actor, at a fixed `lr = 3e-4` that BLOCK_G declares
+    # explicitly out of the sweep. 📏 The measured consequence is in
+    # `runs/val-gnn-deep-s*/log.jsonl`: `approx_kl` sits at **0.002-0.004** for
+    # the whole run against PPO's usual 0.01-0.02, so total policy movement is
+    # ~0.14 nats of KL end to end. Every result in `results/` -- the 81-run
+    # sweep, the RQ2 ladder, all eight interventions -- was measured under it.
+    #
+    #: Rows per gradient step, set directly. `None` keeps `mini_batches`, which
+    #: is what ties the minibatch to the cadence. ⚠️ Setting this costs almost no
+    #: FLOPs: the same rows are visited the same number of times per epoch, so
+    #: only kernel-launch overhead grows while the gradient-step count rises by
+    #: the same factor the minibatch shrinks.
+    mini_batch_size: int | None = None
+    #: Critic learning rate. `None` = `learning_rate`, i.e. today's single Adam
+    #: over the union of both parameter sets (Adam is per-parameter, so two
+    #: optimizers at equal LR are mathematically identical to one).
+    learning_rate_critic: float | None = None
+    #: Separate gradient-norm clip for the critic. `None` reproduces the
+    #: inherited **joint** clip over actor and critic parameters, which
+    #: `docs/inherited/BLOCK_G.md` lists as open and untested: with
+    #: `value_loss_scale = 2.5` a large value gradient scales the policy gradient
+    #: down by the same factor. ⚠️ `grad_kept` is instrumented for exactly this
+    #: and is **NaN in every logged run in `runs/`** -- it has never been read.
+    grad_norm_clip_critic: float | None = None
+    #: Adaptive LR on the measured KL, the MAPPO/SB3 rule. `0.0` disables it and
+    #: is the inherited behaviour. When set, the LR is multiplied by 1/1.5 if the
+    #: update round's KL exceeds `2 * target_kl` and by 1.5 if it falls below
+    #: `target_kl / 2`, once per round rather than per minibatch.
+    target_kl: float = 0.0
+    #: Bounds for the adaptive rule, so it cannot run away in either direction.
+    lr_min: float = 1e-5
+    lr_max: float = 1e-2
     #: 🔒 Never False in a reported run. See the module docstring.
     time_limit_bootstrap: bool = True
     normalise_values: bool = True
@@ -282,8 +327,14 @@ class PPOTrainer:
         self.rows = env.cfg.num_envs * env.cfg.num_drones
         self.total_timesteps = total_timesteps or 0
         self.diagnostics = diagnostics
-        self.optimizer = torch.optim.Adam(
-            [*actor.parameters(), *critic.parameters()], lr=self.cfg.learning_rate
+        # 🔒 Two optimizers, always. Adam is per-parameter, so at equal learning
+        # rates this is mathematically identical to the single Adam over the
+        # union that the inherited runs used -- `test_ppo.py` pins that. What it
+        # buys is the ability to give the critic its own LR and its own gradient
+        # clip, neither of which was reachable before.
+        self.actor_optimizer = torch.optim.Adam(actor.parameters(), lr=self.cfg.learning_rate)
+        self.critic_optimizer = torch.optim.Adam(
+            critic.parameters(), lr=self.cfg.learning_rate_critic or self.cfg.learning_rate
         )
         self.scaler = RunningScalar(self.device) if self.cfg.normalise_values else None
         self.curriculum = (
@@ -492,8 +543,17 @@ class PPOTrainer:
         action, old_log_prob = flat(self.buf["action"]), flat(self.buf["log_prob"])
         returns, advantages, values = flat(returns), flat(advantages), flat(values)
 
+        kl_sum = torch.zeros((), device=self.device)
+        kl_n = 0.0
         total = obs.shape[0]
-        size = total // cfg.mini_batches
+        # ☠️ The frozen axis -- see `PPOConfig.mini_batch_size`. `mini_batches`
+        # ties the gradient-step count to the cadence, which is how every run in
+        # this project ended up at 40,960 rows per step regardless of preset.
+        if cfg.mini_batch_size is not None:
+            n_batches = max(1, total // cfg.mini_batch_size)
+        else:
+            n_batches = cfg.mini_batches
+        size = total // n_batches
         stop = False
         for _ in range(cfg.learning_epochs):
             if stop:
@@ -503,7 +563,7 @@ class PPOTrainer:
                 if cfg.shuffle_minibatches
                 else torch.arange(total, device=self.device)
             )
-            for i in range(cfg.mini_batches):
+            for i in range(n_batches):
                 idx = order[i * size : (i + 1) * size]
 
                 log_prob, entropy = self.actor.evaluate(obs[idx], action[idx])
@@ -513,6 +573,8 @@ class PPOTrainer:
                 with torch.no_grad():
                     # Schulman's k3 estimator; unbiased and non-negative.
                     kl = ((ratio - 1.0) - log_ratio).mean()
+                    kl_sum = kl_sum + kl
+                    kl_n += 1.0
                 if cfg.kl_threshold and bool(kl > cfg.kl_threshold):
                     stop = True
                     break
@@ -547,7 +609,8 @@ class PPOTrainer:
                 entropy_loss = -cfg.entropy_loss_scale * entropy.mean()
                 loss = policy_loss + value_loss + entropy_loss
 
-                self.optimizer.zero_grad(set_to_none=True)
+                self.actor_optimizer.zero_grad(set_to_none=True)
+                self.critic_optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 # ⚠️ Instrumented because `docs/inherited/BLOCK_G.md` lists it as
                 # OPEN: the norm clip is applied to actor and critic parameters
@@ -559,7 +622,18 @@ class PPOTrainer:
                 # pure exploration noise would give.
                 g_actor = _grad_norm(self.actor.parameters())
                 g_critic = _grad_norm(self.critic.parameters())
-                if cfg.grad_norm_clip > 0:
+                if cfg.grad_norm_clip_critic is not None:
+                    # ✅ Separate norms. `policy_loss` and `entropy_loss` are
+                    # functions of the actor's parameters alone and `value_loss`
+                    # of the critic's, so the two gradients are disjoint and
+                    # clipping them apart is exact rather than an approximation.
+                    if cfg.grad_norm_clip > 0:
+                        nn.utils.clip_grad_norm_(self.actor.parameters(), cfg.grad_norm_clip)
+                    if cfg.grad_norm_clip_critic > 0:
+                        nn.utils.clip_grad_norm_(
+                            self.critic.parameters(), cfg.grad_norm_clip_critic
+                        )
+                elif cfg.grad_norm_clip > 0:
                     # ⚠️ Applied JOINTLY to actor and critic parameters, which is
                     # what the inherited runs did. `docs/inherited/BLOCK_G.md`
                     # flags it as open: a large value-loss gradient can throttle
@@ -568,7 +642,8 @@ class PPOTrainer:
                         [*self.actor.parameters(), *self.critic.parameters()],
                         cfg.grad_norm_clip,
                     )
-                self.optimizer.step()
+                self.actor_optimizer.step()
+                self.critic_optimizer.step()
 
                 self._accumulate(
                     {
@@ -577,19 +652,64 @@ class PPOTrainer:
                         "approx_kl": kl,
                         "entropy": entropy.mean(),
                         "log_std": self.actor.log_std.mean(),
+                        "lr_actor": torch.tensor(
+                            self.actor_optimizer.param_groups[0]["lr"], device=self.device
+                        ),
                         "grad_norm_actor": g_actor,
                         "grad_norm_critic": g_critic,
-                        # What fraction of the actor's gradient survives the
-                        # JOINT clip. 1.0 = untouched.
-                        "grad_kept": torch.clamp(
-                            cfg.grad_norm_clip
-                            / (g_actor.square() + g_critic.square()).sqrt().clamp_min(1e-12),
-                            max=1.0,
-                        )
-                        if cfg.grad_norm_clip > 0
-                        else torch.ones((), device=g_actor.device),
+                        # What fraction of the ACTOR's gradient survives the
+                        # clip. 1.0 = untouched.
+                        #
+                        # ☠️ **The denominator depends on which clip is in
+                        # force**, and getting it wrong makes the number quietly
+                        # meaningless -- which is how this diagnostic came to sit
+                        # at NaN in every log in `runs/` without anyone noticing.
+                        # Under the JOINT clip the actor is scaled by
+                        # `clip / ||[g_actor, g_critic]||`, so the critic's
+                        # gradient throttles the policy; under SEPARATE clips it
+                        # is scaled by `clip / ||g_actor||` and the critic cannot
+                        # reach it at all. Reporting the joint form while running
+                        # separate clips would understate retention by exactly
+                        # the factor the split was made to remove.
+                        "grad_kept": _grad_kept(cfg, g_actor, g_critic),
                     }
                 )
+
+        self._adapt_learning_rate(kl_sum / max(kl_n, 1.0))
+
+    # -- adaptive learning rate ------------------------------------------- #
+
+    def _adapt_learning_rate(self, kl: Tensor) -> None:
+        """MAPPO/SB3's KL-targeting rule, once per update round.
+
+        ⛔ Off unless `target_kl > 0`, and then it moves the ACTOR's LR only --
+        the critic is fitting a regression whose difficulty has nothing to do
+        with how far the policy moved, so tying its step size to the policy's KL
+        would couple two unrelated schedules.
+
+        📏 Why the rule is here at all: `runs/val-gnn-deep-s*/log.jsonl` records
+        `approx_kl` at **0.002-0.004** for entire 12 M-step runs, against PPO's
+        usual 0.01-0.02 and a `ratio_clip = 0.2` that corresponds to far more.
+        The policy is taking steps roughly an order of magnitude smaller than the
+        algorithm is designed for, and `lr` was declared out of the sweep.
+
+        ⚠️ One host sync per update round, deliberately -- `bool(kl > ...)` reads
+        a device scalar. That is ~46 syncs in a 12 M-step run at the `deep`
+        cadence, outside the hot loop, against `AGENTS.md`'s rule about
+        `.item()` in `step()`. The alternative is a tensor-valued LR, which Adam
+        does not accept.
+        """
+        cfg = self.cfg
+        if cfg.target_kl <= 0.0:
+            return
+        lr = self.actor_optimizer.param_groups[0]["lr"]
+        measured = float(kl)
+        if measured > 2.0 * cfg.target_kl:
+            lr = max(cfg.lr_min, lr / 1.5)
+        elif measured < 0.5 * cfg.target_kl:
+            lr = min(cfg.lr_max, lr * 1.5)
+        for group in self.actor_optimizer.param_groups:
+            group["lr"] = lr
 
     # -- driver ----------------------------------------------------------- #
 
@@ -643,12 +763,37 @@ class PPOTrainer:
                 # -- worse -- silently scores a different network.
                 "obs_history": getattr(self.actor, "obs_history", 1),
                 "mask_jammed_obs": bool(getattr(self.env.cfg, "mask_jammed_obs", False)),
-                "min_log_std": self.actor.min_log_std,
+                "min_log_std": self.actor.min_log_std.tolist(),
+                # 🔒 Top level for the same reason as `obs_history`: both change
+                # what the network COMPUTES without changing the shape of its
+                # state dict, so a loader that misses them scores a different
+                # function and `load_state_dict` raises nothing.
+                "tanh_mean": bool(getattr(self.actor, "tanh_mean", True)),
+                "layer_norm": bool(getattr(self.actor, "layer_norm", False)),
                 "timestep": self.timestep,
                 **(extra or {}),
             },
             path,
         )
+
+
+def _grad_kept(cfg: PPOConfig, g_actor: Tensor, g_critic: Tensor) -> Tensor:
+    """Fraction of the actor's gradient that survives `clip_grad_norm_`.
+
+    📏 The first reading of it, on a 120 k-step MPS smoke run at the defaults:
+    **0.20-0.26**, with `grad_norm_actor` 1.8-2.4 against `grad_norm_clip = 0.5`.
+    Three quarters of the policy gradient is discarded every step -- on top of a
+    total budget of ~5,900 Adam steps. Both effects point the same way and they
+    multiply.
+    """
+    if cfg.grad_norm_clip <= 0:
+        return torch.ones((), device=g_actor.device)
+    norm = (
+        g_actor
+        if cfg.grad_norm_clip_critic is not None
+        else (g_actor.square() + g_critic.square()).sqrt()
+    )
+    return torch.clamp(cfg.grad_norm_clip / norm.clamp_min(1e-12), max=1.0)
 
 
 def _grad_norm(params) -> Tensor:
