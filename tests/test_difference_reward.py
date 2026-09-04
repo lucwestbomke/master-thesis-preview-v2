@@ -34,7 +34,14 @@ sys.path.insert(0, str(ROOT))
 from src.baselines.b0 import B0Policy
 from src.env import routing
 from src.env.core import CAPACITY_THRESHOLD_MBPS, BatchedSwarmEnv, EnvConfig
-from src.env.reward import DEFAULT_WEIGHTS, RewardWeights, difference_reward, reward, reward_terms
+from src.env.reward import (
+    DEFAULT_WEIGHTS,
+    RewardWeights,
+    difference_reward,
+    mission_capable,
+    reward,
+    reward_terms,
+)
 
 
 def make_env(w_difference: float, num_envs: int = 16, num_drones: int = 5) -> BatchedSwarmEnv:
@@ -229,3 +236,74 @@ def test_the_per_drone_term_list_in_measure_credit_still_matches_the_reward():
     per_drone = {name for name, value in terms.items() if float(value.std(dim=-1).max()) > 0.0}
     assert per_drone <= set(PER_DRONE_TERMS), f"unlabelled per-drone terms: {per_drone}"
     assert "difference" in PER_DRONE_TERMS
+
+
+# --------------------------------------------------------------------------- #
+# 5. `difference_on` -- which quantity is differenced
+# --------------------------------------------------------------------------- #
+
+
+def test_the_observed_mode_credits_only_the_sole_observer():
+    """🔍 The property that keeps this from being the failure `REWARD.md` warns
+    per-drone terms into ("pay every drone for its own proximity and all N fly at
+    the HVT and nobody relays").
+
+    `observed - observed_{-i}` is 1 only when drone `i` is the **only** one
+    holding the ray. A second drone joining drives BOTH to zero, so the term is
+    anti-clustering rather than clustering. ⚠️ It also gives relays exactly
+    nothing, which is the cost of its density.
+    """
+    w = RewardWeights(w_difference=1.0, difference_on="observed")
+    env = make_env(1.0)
+    snap, aux = roll(env)
+    d = difference_reward(snap, w)
+    sees = aux["sees_hvt"]
+
+    sole = sees.sum(dim=-1) == 1
+    many = sees.sum(dim=-1) > 1
+    assert torch.equal(d[sole].sum(dim=-1), torch.ones(int(sole.sum())) * w.w_difference)
+    if bool(many.any()):
+        assert (d[many] == 0.0).all(), "no drone is pivotal when two hold the ray"
+
+
+def test_the_observed_mode_credits_a_strict_subset_of_the_capable_mode():
+    """⛔ Pins the correction, so the refuted guess cannot come back.
+
+    `"observed"` was added on the assumption it would be **denser** than
+    `"capable"`. 📏 It is not -- 10.87 % vs 9.40 % of (env, drone) pairs under B0,
+    3.52 % vs 3.50 % under random -- because it needs the observer to be the
+    SOLE one, while `"capable"` also fires for any relay the router cannot go
+    around. What it actually is, is the ablation that isolates relay credit.
+
+    The structural statement, which is what this asserts: a drone pivotal for the
+    sightline is pivotal for the mission too, so `observed` credit implies
+    `capable` credit whenever the swarm is capable at all.
+    """
+    env = make_env(1.0)
+    snap, _ = roll(env)
+    capable = difference_reward(snap, RewardWeights(w_difference=1.0))
+    observed = difference_reward(snap, RewardWeights(w_difference=1.0, difference_on="observed"))
+
+    live = mission_capable(snap).unsqueeze(-1).expand_as(capable)
+    assert ((observed > 0) & live).le(capable > 0).all(), (
+        "a drone whose deletion removes the sightline must also be pivotal for "
+        "the mission, whenever the mission is up at all"
+    )
+
+
+def test_an_unknown_difference_target_is_refused_rather_than_silently_ignored():
+    env = make_env(1.0)
+    snap, _ = roll(env)
+    with pytest.raises(ValueError, match="difference_on"):
+        difference_reward(snap, RewardWeights(w_difference=1.0, difference_on="capacity"))
+
+
+def test_the_mode_is_not_derived_as_a_phi_flag():
+    """⛔ `pbrs_safe_fields()` is a SUBTRACTION, so a new field lands inside Phi by
+    default. That is right for a weight and wrong for a mode: it would derive a
+    `float` flag for a `str` field and collide with the explicit one."""
+    from src.env.reward import REWARD_MODES, pbrs_safe_fields
+
+    assert "difference_on" in REWARD_MODES
+    assert "difference_on" not in pbrs_safe_fields()
+    assert not (REWARD_MODES & set(pbrs_safe_fields()))

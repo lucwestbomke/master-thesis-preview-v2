@@ -321,7 +321,14 @@ class SwarmActor(nn.Module):
         #
         # ⚠️ The default is -20 because that is what the inherited 40.7 % ran
         # under. It is a knob, not a recommendation.
-        self.register_buffer("min_log_std", _per_dim(min_log_std, "min_log_std"))
+        # ☠️ `persistent=False`, and it is NOT a detail. A plain buffer joins
+        # `state_dict()`, and every checkpoint written before this field existed
+        # then fails to load with `Missing key(s) in state_dict: "min_log_std"` --
+        # which is every checkpoint in `runs/`, and every loader in `scripts/`.
+        # It is a configuration constant, not a learned parameter: it already
+        # travels in the checkpoint blob under its own key and is passed back
+        # through the constructor.
+        self.register_buffer("min_log_std", _per_dim(min_log_std, "min_log_std"), persistent=False)
         self.max_log_std = float(max_log_std)
 
         if orthogonal_init:

@@ -84,6 +84,7 @@ AXES: dict[str, str] = {
     "grad_norm_clip_critic": "--grad-norm-clip-critic",
     #: 🔍 The difference reward, `results/capability_gates.md` Gate E.
     "w_difference": "--w-difference",
+    "difference_on": "--difference-on",
     #: 📏 Observation content, `results/capability_gates.md` "not in either gate".
     #: ⛔ `--mask-broadcast-obs` is deliberately NOT here: it is a `store_true`
     #: flag and `run_one` emits `[flag, value]` pairs, so an axis over it would

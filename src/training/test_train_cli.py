@@ -33,6 +33,7 @@ import pytest
 from ..env.reward import (
     OBJECTIVE_WEIGHTS,
     PHYSICAL_REFERENCES,
+    REWARD_MODES,
     RewardWeights,
     pbrs_safe_fields,
 )
@@ -77,7 +78,11 @@ def test_the_knob_list_is_derived_from_the_dataclass_and_not_hand_written():
     field to `RewardWeights` must land it in the swept set automatically."""
     every = {f.name for f in dataclasses.fields(RewardWeights)}
     derived = set(pbrs_safe_fields())
-    assert derived == every - OBJECTIVE_WEIGHTS - PHYSICAL_REFERENCES
+    # ⚠️ Three subtractions, not two. `REWARD_MODES` holds fields that select a
+    # MODE rather than scale a term (`difference_on`); deriving a `float` flag
+    # for a `str` field would collide with the explicit one.
+    assert derived == every - OBJECTIVE_WEIGHTS - PHYSICAL_REFERENCES - REWARD_MODES
+    assert not (derived & REWARD_MODES)
     assert "n_cover_samples" in derived
     assert isinstance(RewardWeights().n_cover_samples, int)
 

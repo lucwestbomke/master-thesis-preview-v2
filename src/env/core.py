@@ -1252,8 +1252,8 @@ class BatchedSwarmEnv:
         sinr_db = prx_dbm - channel.mw_to_dbm(denom_mw)
         return channel.capacity_mbps(sinr_db, BANDWIDTH_HZ) * self.no_self, jam_mw
 
-    def _capable_without(self, capacity: Tensor, sees: Tensor) -> Tensor:
-        """`(B, N)` -- `mission_capable` for the swarm with drone `i` DELETED.
+    def _capable_without(self, capacity: Tensor, sees: Tensor) -> tuple[Tensor, Tensor]:
+        """`(B, N)` x2 -- `mission_capable` and `observed` with drone `i` DELETED.
 
         The counterfactual half of `reward.difference_reward`. Exact, not an
         estimate: it re-runs the same routing DP `reward` runs, on a capacity
@@ -1294,7 +1294,10 @@ class BatchedSwarmEnv:
             reuse_limit=cfg.reuse_limit,
         ).view(b, n)
         observed = src.any(dim=-1)  # (B, N)
-        return (observed & (e2e >= CAPACITY_THRESHOLD_MBPS)).to(capacity.dtype)
+        return (
+            (observed & (e2e >= CAPACITY_THRESHOLD_MBPS)).to(capacity.dtype),
+            observed.to(capacity.dtype),
+        )
 
     def _evaluate(self) -> tuple[Snapshot, dict[str, Tensor]]:
         """Physics of the *current* state. Pure: advances nothing."""
@@ -1330,6 +1333,15 @@ class BatchedSwarmEnv:
         # only when `w_hold > 0`.
         best_clr, observer = clr_hvt.max(dim=-1)
 
+        # The counterfactual mission and sightline, `(B, N)` each. Gated on the
+        # weight so it costs exactly nothing when the difference reward is off --
+        # the same discipline `on_path` / `drone_pos` already follow.
+        counterfactual = (
+            self._capable_without(capacity, sees)
+            if self.weights.w_difference != 0.0
+            else (None, None)
+        )
+
         snap = Snapshot(
             observed=sees.any(dim=-1),
             e2e_capacity_mbps=e2e,
@@ -1342,9 +1354,8 @@ class BatchedSwarmEnv:
             # The counterfactual mission term, `(B, N)`. Gated on the weight so
             # it costs exactly nothing when the difference reward is off, which
             # is the same discipline `on_path` / `drone_pos` already follow.
-            capable_without=(
-                self._capable_without(capacity, sees) if self.weights.w_difference != 0.0 else None
-            ),
+            capable_without=counterfactual[0],
+            observed_without=counterfactual[1],
             # Raw geometry for `Phi_cover`, which is a function of where EVERY
             # drone is rather than of a reduction over them -- read only when
             # `w_cover > 0`. Views, not copies: no work when the term is off.

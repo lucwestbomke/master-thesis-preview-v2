@@ -4,6 +4,12 @@
 framings before this one are recorded in §6, because a claim that was refuted is
 part of the evidence for the one that replaced it.
 
+⚠️ **Amended the same day.** §3 said *"closed, do not re-open"* and now says
+*"re-opened, on named grounds"* — a **measured confound in the optimiser** that
+every number in `results/` shares. 🔒 Four of its five lines are untouched and
+§3 says which. The amendment is recorded here rather than made silently, for the
+same reason §6 keeps the refuted framings.
+
 `docs/INHERITED.md` records *what is already known*. `results/` records *what has
 been measured, with the rule declared before each run*. **This file records what
 happens next.**
@@ -81,8 +87,16 @@ exploitation. That is why masking the jammed observations was a **null**
 1.51 pp of capability, and 11 pp of gap cannot come out of it.
 
 ⛔ **So the learned policies in this project cannot test the loop claim.** Doing
-that needs a policy with real capacity headroom — i.e. a genuinely capable one —
-which is the 15 pp gap §3 closed. **Do not re-open §3 to rescue §1.**
+that needs a policy with real capacity headroom — i.e. a genuinely capable one.
+
+⚠️ **This used to end "which is the 15 pp gap §3 closed. Do not re-open §3 to
+rescue §1."** §3 is now re-opened — not to rescue this claim, but on a **named,
+measured confound in the optimiser** that every result in `results/` shares. The
+distinction is the whole point and §3 states it. ⭐ Note which way the dependency
+runs: **a capable learned policy is a *prerequisite* for RQ1**, because a policy
+1.1 Mbps from the threshold measures damage rather than exploitation. §1 is
+unaffected by the outcome either way — its evidence is a *scripted* controlled
+pair.
 
 ---
 
@@ -123,23 +137,76 @@ unretired.**
 
 ---
 
-## 3. The premise: B0 wins the static task, and that axis is closed
+## 3. The capability question — re-opened, on named grounds
 
-⛔ **Do not re-open this.** Five independent lines, each measured:
+⚠️ **This section said "closed. Do not re-open." until 2026-09-04.** It is
+re-opened, and the honest thing is to be exact about *what* changed, because four
+of the five lines below are untouched.
 
-| | finding |
-|---|---|
-| 1 | The gap is **`observed` and nothing else** — conditioned on a sightline the GNN converts it as well as B0, 0.620 vs 0.617 |
-| 2 | **B0 wins the reward too** — 222.9 vs 85.8 `episode_return`, and return rank-correlates with `mission_capable` at **ρ = 0.987** over 20 rows |
-| 3 | **Eight pre-declared interventions, eight nulls**, the last with a *measured-adequate* gradient |
-| 4 | **Structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** of the total. Every team reward term cancels *exactly*, so no shaping knob can move role differentiation — [`credit_assignment.md`](results/credit_assignment.md) |
-| 5 | **Not memory either**: perfect target state is worth **−0.4 pp**, a hard upper bound — [`memory_horizon.md`](results/memory_horizon.md) |
+### 📏 What changed: the optimisation budget was frozen and never examined
 
-📏 And the budget is priced: B0's whole design advantage is **~10.3 pp** (link
-repair 6.9, ranked roles 3.4, belief ~0) against a **15.0 pp** gap. Acquiring
-every component would not close it — [`b0_ablation.md`](results/b0_ablation.md).
+[`docs/inherited/BLOCK_G.md`](docs/inherited/BLOCK_G.md) built three cadences
+holding *"gradient density constant at 488 optimizer steps per M env-steps"*, and
+recorded — without following it up — that this pins **the minibatch at 40,960
+rows in all three**. It also states *"⛔ Not swept, deliberately: the learning
+rate."* So at the `deep` cadence a 12 M-step run is
 
----
+```
+12e6 / (4096 * 64)               =     46 PPO updates
+46 * 4 epochs * 32 mini-batches  =  5,888 Adam steps, total
+```
+
+on a **137 k-parameter** actor. 📏 `runs/val-gnn-deep-s*/log.jsonl` confirms the
+consequence: `approx_kl` sits at **0.002 – 0.004** for whole runs against PPO's
+usual 0.01 – 0.02 — about **0.14 nats of total policy movement, end to end**. And
+`grad_kept`, instrumented for the joint-clip question `BLOCK_G` lists as open, is
+**NaN in every log in `runs/`**: first reading is **0.20 – 0.26**, so three
+quarters of what remains is discarded by the norm clip.
+
+☠️ **Every number in `results/` was measured under that budget.** That does not
+make any of them wrong. It means they share one uncontrolled variable.
+
+### 🔒 What that does, and does NOT do, to the five lines
+
+| | line | status |
+|---|---|---|
+| 1 | the gap is **`observed` and nothing else** — conditioned on a sightline the GNN converts it as well as B0, 0.620 vs 0.617 | ✅ **stands.** It is a *description* of the gap, not a closure of it — and it is the target |
+| 2 | **B0 wins the reward too**, 222.9 vs 85.8, and return rank-correlates with `mission_capable` at **ρ = 0.987** | ✅ **stands.** The objective is not misspecified, whatever the optimiser did |
+| 3 | **eight pre-declared interventions, eight nulls** | ☠️ **confounded.** All eight were measured at ~5,900 Adam steps with `grad_kept` ~0.24. Not refuted — confounded, identically |
+| 4 | **structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** | ✅ **stands, exactly.** Team terms cancel *by construction*; no optimisation changes that. ⭐ And it **names its own successor**: *"What is left is the critic and the advantage, none of which has been touched"* |
+| 5 | **not memory either**: perfect target state is worth **−0.4 pp** | ⚠️ **stands as a bound on TARGET memory, for B0.** [`memory_horizon.md`](results/memory_horizon.md) itself leaves **role-commitment** memory open |
+
+🔍 **Line 4 is not an obstacle to this work — it is the argument for it.** It says
+no *shaping* knob can move role credit, and points at the return. That is exactly
+what §7's Gate E changes, and it is why the instrument is a difference reward
+rather than a ninth weight.
+
+### 🔒 And §1 requires this
+
+⚠️ §1 already says, in its own words: *"the learned policies in this project
+cannot test the loop claim. Doing that needs a policy with real capacity headroom
+— i.e. a genuinely capable one."* Every learned policy here sits within
+**1.1 Mbps of the 15 Mbps threshold**, where the jammer's damage term dominates
+and no behavioural response is being measured at all.
+
+⭐ **So a capable learned policy is a prerequisite for RQ1, not a distraction from
+it.** The old instruction — *"do not re-open §3 to rescue §1"* — was right about
+the failure mode it feared (fitting §3 to save a claim) and wrong about the
+remedy. §3 is re-opened on a **named, measured confound in the optimiser**, with
+gates declared before the runs, and §1 is untouched by the outcome either way.
+
+### 📏 What has NOT changed
+
+⛔ **B0 is still the strongest policy in this project**, 57.3 % [54.8 – 60.6]
+against the best learned 40.7 %. ⛔ **B0's design advantage is still ~10.3 pp**
+against a 15.0 pp gap ([`b0_ablation.md`](results/b0_ablation.md)), so acquiring
+every B0 component would still not close it — which is why Gates D–F attack the
+optimiser and the advantage rather than trying to clone the heuristic.
+
+🔒 **The bar, in this project's own standard** (Gate A and RQ2 both judge on
+disjoint seed ranges): *clears B0* is a median above **57.3 %**; *beats B0* is a
+**worst seed above 60.6 %**. Full declaration:
+[`results/capability_gates.md`](results/capability_gates.md).
 
 ## 4. The adversary ladder
 
@@ -170,8 +237,16 @@ declared before the run and never edited afterwards.
 | **A** | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
 | **B** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
 | **C** | does quantisation hurt coordination more than control? | ⛔ **not run** (RQ4) |
-| Φ v2 | does a steeper potential move the observer? | ⛔ **killed** — 11.8 m of a 130 m gap |
+| **D** | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **not run** — [`capability_gates.md`](results/capability_gates.md) |
+| **E** | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **not run** — same file |
+| **F** | is the **observation** lying to the policy? | ⛔ **not run** — same file, lowest prior |
+| Φ v2 | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. §3 |
 | k = 2 | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
+
+⚠️ **Gates D, E and F re-open §3.** Every branch of each is declared before its
+run and each partitions the outcome space — ⛔ Gate A and
+[`trainer_validation.md`](results/trainer_validation.md) *each* recorded a rule
+that did not, and that is now a standing requirement rather than a lesson.
 
 ⚠️ **Gate B's verdict stands as declared, and its interpretation has moved.** It
 was read as *"scripted policies are more exploitable"*; §1 shows the variable is
@@ -198,7 +273,7 @@ designed to test it, and the sequence is why the current claim should be trusted
 
 | framing | killed by | when |
 |---|---|---|
-| *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 |
+| *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 — ⚠️ **partially reinstated 2026-09-04.** The eight nulls are *confounded*, not refuted: all were measured at ~5,900 Adam steps. §3 |
 | *The adversary ladder is non-monotone; adaptivity does not help* | the 5-seed CUDA re-run **reversed** a one-seed CPU result | 2026-09-03 |
 | *Exploitability is a cost of **capability*** | the frontier run: `b0-geodesic` is **more capable than every learned policy and less exploitable than all of them** | 2026-09-04 |
 
@@ -258,17 +333,69 @@ pair and becomes a **curve**.
 chosen one?"* — computable from the capacity matrix `routing.py` already builds.
 ⛔ Nothing measures this today, and it is RQ3's candidate mechanism.
 
+---
+
+### ⭐ Runs 5–7 — the capability programme. Gates D, E, F, ~4 GPU-hours.
+
+🔒 **Declared in full, before any run:**
+[`results/capability_gates.md`](results/capability_gates.md). Ordered so that each
+is interpretable given the one before it.
+
+| | question | instrument | why it is first / next / last |
+|---|---|---|---|
+| **D** | is the policy **optimisation-limited**? | `--mini-batch-size`, `--target-kl`, `--grad-norm-clip-critic`, `--orthogonal-init`, `--min-log-std`, and 📏 **`--gae-lambda`, never swept in this project's history** | It gates everything. Its NULL branch is a real result: it removes the confound from all eight prior nulls and makes [`credit_assignment.md`](results/credit_assignment.md) *stronger* |
+| **E** | does **per-drone credit** produce roles? | `--w-difference` — `D_i = G(z) − G(z_{−i})`, the mission term recomputed with drone `i` deleted, exactly | The successor axis `credit_assignment.md` names. ⛔ Only interpretable on a policy that can actually train, hence after D |
+| **F** | is the **observation** lying to the policy? | `--cue-mode`, `--mask-broadcast-obs`, `--curriculum-boundaries` | ⚠️ **Lowest prior**: [`obs_mask_gate.md`](results/obs_mask_gate.md) already masked nine features for a null |
+
+📏 **Why λ belongs in Gate D and not in a footnote.** At `γ = 0.997, λ = 0.95` the
+advantage weights rewards by `(γλ)^l = 0.947^l` — an effective horizon of **18.9
+steps, 7.6 seconds**. B0's observer tenure is **294.7 steps, 118 s**. ⛔ **The
+advantage sees 6 % of the behaviour it is supposed to credit.** `λ = 0.99` gives
+77 steps and `λ = 0.995` gives 126. `credit_assignment.md` names the same filter
+from the other side: *"GAE accumulates the team component coherently over ~19
+effective steps while per-drone terms largely cancel"* — so λ gates whether `D_i`
+reaches the gradient at all.
+
+🔒 **Excluded by decision, 2026-09-04**, and both are recorded so they are not
+quietly re-litigated:
+
+* ⛔ **an agent index or role embedding.** Roles must **emerge**. B0 is granted
+  roles-from-index as a documented advantage; the learned arm is not, and that
+  asymmetry is what makes Gate E a test of *credit* rather than of labelling.
+* ⛔ **DAgger from B0.** [`bc_init.py`](scripts/bc_init.py) exists and has never
+  been reported, and `memory_horizon.md` predicts it fixes the 9.4 % clone. Held
+  as the fallback if D, E and F all fail. ⚠️ A teacher-initialised policy is a
+  **probe**, not a like-for-like RQ2 or Gate B arm.
+
 ### Then, in order
 
 | | what | why then |
 |---|---|---|
 | **RQ4 / Gate C** | ONNX export **locally first**, then TensorRT on the Orin | The only deliverable that cannot fail. PyTorch Geometric may not export; that risk is unretired and cheap to close |
 | **J4** | learned jammer, opponent pool | Strengthens RQ1 and RQ3. ⚠️ Gate B stands without it — the fallback declared in §8 |
-| **Write** | exposé, then the paper | 🔒 **After runs 1–3.** The claim has moved three times in ten days; let the data settle it before it is promised to anyone |
+| **Write** | exposé, then the paper | 🔒 **After runs 1–3 and Gates D–F.** The claim has moved three times in ten days and §3 re-opened on 2026-09-04; let the data settle it before it is promised to anyone |
 
-⛔ **Not on the roadmap:** any further reward shaping (§3.4 closed it
-structurally), any further action-space work (Gate A), recurrence (bounded at
-0.4 pp), frame stacking beyond k = 2 (a one-step state needs no longer history).
+⛔ **Not on the roadmap**, and each for a reason that survives §3's re-opening:
+
+| | why not |
+|---|---|
+| **further reward *shaping*** | 🔒 §3 line 4 closes it **structurally**, and that line is exact. Team terms cancel from `Var_i(A)` by construction. ⚠️ Gate E is not shaping — it changes the **return**, and `D_i` is factored so it cannot move the equilibrium |
+| **further action-space work** | Gate A. ⚠️ It is *also* confounded by the optimisation budget — its velocity seeds "learn normally for the first fifth of the run, then decay" over 46 updates — but 📏 `capable \| observed` is already **0.620 vs B0's 0.617**, so control is not the deficit. ⛔ Re-open only if Gate D promotes and the pathologies persist |
+| **recurrence** | Bounded at 0.4 pp for *target* memory by the oracle. ⚠️ Role-commitment memory is left open by `memory_horizon.md` — but that is what Gate E attacks, far more cheaply and at a fraction of the bug density |
+| **frame stacking beyond k = 2** | A one-step search state needs no longer history |
+| **wider or deeper networks** | 📏 RQ2 measured architecture at ±1 pp across three rungs. The actor is 137 k parameters against ~5,900 gradient steps: the budget binds long before the width does |
+
+📏 **And one axis is now measured to be nearly free.** `total_power_w` depends on
+**speed, not altitude** — climbing costs a transient `W·v_z/η` and staying high is
+free — while `ALT_MAX_M = 80` is a *derived* ceiling. So the optimal altitude is
+constant, and 📏 B0's mean `|a_z|` is **0.006** with a standard deviation of
+**0.053**, against 0.46 / 0.52 on x / y. ⚠️ A scalar exploration σ therefore
+spends a third of its budget on a dimension with nothing to explore, and pays for
+it twice: `energy` charges climb power, and leaving the ceiling costs sightlines.
+🔧 `--initial-log-std` and `--min-log-std` now take a per-dimension vector.
+⛔ Collapsing `ACTION_DIM` to 2 is **not** proposed on that evidence alone — it
+breaks every checkpoint — and should follow only if a sweep shows `σ_z` wants to
+be ~0.
 
 ---
 
@@ -282,6 +409,10 @@ structurally), any further action-space work (Gate A), recurrence (bounded at
 | **TR 36.777 NLoS intercept is wrong.** Every number re-derives | 🔒 One human reading of one table. Close it before the freeze |
 | **n = 1 environment** | ⚠️ Not resolvable within this project. State it as the limitation it is; the mechanism is at least *named and priced* rather than statistical |
 | **The claim moves a fourth time** | 🔒 Runs 1–2 are pre-declared attempts to break the current one. If it survives them it has been tested, not just fitted |
+| ⭐ **Gates D–F succeed and a learned policy beats B0** | ✅ **This strengthens the thesis rather than threatening it.** §1 already dropped the scripted-vs-learned framing, and it *requires* a capable learned policy to test the loop claim at all. B0 remains the protagonist of RQ1's controlled pair, which is scripted on both sides |
+| ☠️ **Gates D–F succeed and every prior null has to be re-read** | ⚠️ The honest cost of §3's re-opening. 📏 Eight nulls, Gate A, Φ v2 and the k = 2 gate were all measured at ~5,900 Adam steps. If Gate D promotes, each needs a one-line re-statement — *"measured under a 10x smaller optimisation budget"* — and the cheap ones (Φ v2, k = 2) should be re-run before the freeze |
+| ⚠️ **Gate D promotes and destabilises** | Its PARTIAL branch exists for exactly this: helps on the median, hurts the worst seed. 🔒 `AGENTS.md` judges on the worst seed and that is not relaxed for this programme |
+| ⚠️ **`D_i`'s signal is circular** | 📏 The differentiable share it produces is policy-dependent — **35.6 %** on B0 (tenure 295) against **7.98 %** on the learned policy (tenure 47) — so the credit grows as roles emerge. Gate E's validity precondition measures the share **on the trained policy**, and its NULL branch is written to be informative if the bootstrap never starts |
 
 ---
 
@@ -297,3 +428,19 @@ structurally), any further action-space work (Gate A), recurrence (bounded at
   degenerate optimum for the jammer.
 - **Training at more than one `N`.** It turns the zero-shot columns into
   in-distribution tests.
+- **An agent index, a role embedding, or DAgger from B0.** ⛔ Excluded by
+  decision 2026-09-04 — §7. Roles must **emerge**, and a teacher-initialised
+  policy is a probe rather than an arm. DAgger is held as the fallback if
+  Gates D–F all fail.
+- 🔧 **A per-drone value head or a COMA-style counterfactual baseline.** The
+  natural successor to Gate E, and deliberately **not** bundled into it. `A_i =
+  G_i − V(s)` and `G_i` is ~99.9 % identical across drones *today*, so an
+  agent-specific critic has nothing to fit; with `D_i` on, it does. ⚠️ But the
+  direction is ambiguous — a critic that learns *"this drone is the observer, so
+  its return is high"* would subtract exactly the signal `D_i` adds. That needs
+  its own gate, after Gate E has established there is a signal to preserve.
+- 🔧 **A permutation-invariant critic.** On `credit_assignment.md`'s own list:
+  the critic is a plain MLP over index-ordered `rel_pos.flatten(1)` while the
+  DeepSets and GNN actors are permutation-invariant. ⚠️ Low prior — it cannot
+  touch `Var_i(A)` at all, and `explained_variance` already runs 0.94–0.98, so
+  there is little headroom to recover.

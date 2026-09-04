@@ -212,8 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--curriculum-mix",
         type=float,
         default=None,
-        help="share of episodes drawn from EARLIER stages once past stage 1; "
-        "default 0.20",
+        help="share of episodes drawn from EARLIER stages once past stage 1; default 0.20",
     )
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument(
@@ -282,6 +281,18 @@ def build_parser() -> argparse.ArgumentParser:
         "0.09 %% -> 5.2 / 15.5 / 35.6 %% at w = 0.5 / 1.0 / 2.0. ⚠️ An OBJECTIVE "
         "weight, not a Phi term, which is why it is spelled out here like "
         "--battery-variance rather than derived",
+    )
+    ap.add_argument(
+        "--difference-on",
+        default="capable",
+        choices=["capable", "observed"],
+        help="what D_i differences. `capable` (default) credits the observer AND "
+        "any relay the router cannot go around. `observed` credits ONLY observers "
+        "-- deleting a relay never removes a sightline -- so it is the ABLATION "
+        "that isolates whether relay credit matters. ⛔ It is NOT denser: measured "
+        "D>0 rates are 10.87 %% vs 9.40 %% under B0 and 3.52 %% vs 3.50 %% under "
+        "random, because being the SOLE observer is rarer than being a pivotal "
+        "chain member. ⚠️ Inert unless --w-difference is non-zero",
     )
     ap.add_argument(
         "--min-log-std",
@@ -373,6 +384,7 @@ def build_weights(a: argparse.Namespace) -> RewardWeights:
         overrides["battery_variance"] = a.battery_variance
     if a.w_difference is not None:
         overrides["w_difference"] = a.w_difference
+        overrides["difference_on"] = a.difference_on
     weights = dataclasses.replace(weights, **overrides)
 
     failed = [k for k, ok in weight_constraints_satisfied(weights).items() if not ok]

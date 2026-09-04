@@ -90,19 +90,54 @@ uv run python scripts/train.py --arch deepsets --cadence deep --timesteps 120000
     --device cuda --seeds 0 1 2 3 4 --tag gateD-control
 ```
 
-🔒 **Treatment** — the optimisation budget only. ⛔ No reward change, no
-observation change, no architecture change, so a difference is attributable:
+🔒 **Treatment** — the optimisation budget only. ⛔ No reward change and no
+observation change, so a difference is attributable to *the optimiser*.
+
+⚠️ **It bundles five knobs, and that is deliberate.** This is a **screening**
+arm, not an ablation: the question is whether the budget binds at all, and five
+one-at-a-time arms would cost 5× to answer a yes/no. 🔒 If it PROMOTES, the
+ablation is owed before anything is claimed about *which* knob mattered — and
+`--orthogonal-init` is the one to drop first, since it is the only one that
+changes the network rather than the optimiser.
 
 ```bash
 uv run python scripts/train.py --arch deepsets --cadence deep --timesteps 12000000 \
     --device cuda --seeds 0 1 2 3 4 --tag gateD-budget \
     --mini-batch-size 4096 --target-kl 0.015 --grad-norm-clip-critic 1.0 \
-    --orthogonal-init --min-log-std -1.6
+    --orthogonal-init --min-log-std -1.6 --gae-lambda 0.99
 ```
 
 📏 `--mini-batch-size 4096` takes the run from 5,888 to ~58,900 Adam steps at
 **essentially unchanged FLOPs** — the same rows are visited the same number of
 times per epoch; only kernel-launch overhead grows.
+
+### ⭐ 📏 Why `--gae-lambda` is in the treatment and not in a footnote
+
+At `γ = 0.997, λ = 0.95` the advantage weights rewards by `(γλ)^l = 0.94715^l`:
+
+| λ | `γλ` | half-life | effective horizon `1/(1−γλ)` | in seconds at `dt = 0.4` |
+|---|---|---|---|---|
+| **0.95** (shipped) | 0.94715 | 12.8 steps | **18.9 steps** | **7.6 s** |
+| 0.98 | 0.97706 | 29.9 | 43.6 | 17.4 s |
+| **0.99** | 0.98703 | 53.1 | **77.1** | 30.8 s |
+| 0.995 | 0.99201 | 86.5 | 125.2 | 50.1 s |
+
+☠️ **B0's `observer_tenure` is 294.7 steps — 118 seconds. The advantage sees 6 %
+of the behaviour it is supposed to credit.** Committing to the observer role pays
+off over hundreds of steps; at λ = 0.95 essentially none of that reaches the
+gradient. ⛔ `scripts/train.py` records that λ has **never been swept in this
+project's history**.
+
+🔍 And [`credit_assignment.md`](credit_assignment.md) names the same filter from
+the other side: *"GAE accumulates the team component coherently over ~19 effective
+steps (λ = 0.95) while per-drone terms largely cancel."* So λ gates whether Gate
+E's `D_i` reaches the gradient at all — which is why it is set **here**, in the
+control Gate E is measured against, rather than varied simultaneously with it.
+
+⚠️ **λ = 0.99 is a choice, not a measurement.** If Gate D lands NULL or
+REGRESSION, `--gae-lambda 0.95,0.98,0.99,0.995` is the first follow-up axis, one
+variable at a time. Higher λ trades bias for variance, and the variance is
+affordable here: the advantage is computed once per rollout over all 1.31 M rows.
 
 ### 🔒 Validity precondition, checked before the outcome is read
 
@@ -127,8 +162,12 @@ each recorded a rule that failed to; this one is written not to.)*
 ### 🔒 Reported whatever the branch
 
 `approx_kl`, `grad_kept`, `grad_norm_actor`, `grad_norm_critic`,
-`explained_variance`, `log_std`, `at_boundary`, `at_speed_cap` — median and worst
-seed. ⚠️ `grad_kept` has never been read in this project; its first five-seed
+`explained_variance`, `log_std`, `lr_actor`, `at_boundary`, `at_speed_cap` —
+median and worst seed. ⚠️ `explained_variance` is expected to **fall** in any arm
+that also turns on `w_difference`, and that is not a regression: the critic sees
+one global state per env while `G_i` now genuinely differs across drones, so the
+between-drone spread is irreducible error by construction. `ppo.py` says so and
+`return_spread_between_drones` measures it. ⚠️ `grad_kept` has never been read in this project; its first five-seed
 value is a result on its own regardless of the branch.
 
 ### Result

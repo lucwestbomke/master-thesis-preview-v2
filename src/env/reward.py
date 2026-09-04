@@ -118,6 +118,38 @@ class RewardWeights:
     #: the argument above. That is why it is in `OBJECTIVE_WEIGHTS` and gets an
     #: explicit flag in `scripts/train.py` rather than a derived one.
     w_difference: float = 0.0
+    #: **What `D_i` differences.** Not a weight, so it needs no allow-list entry
+    #: -- the same shape as `B0Config.repair_score`, which chooses between
+    #: `"capacity"` and `"clearance"` for the scripted hill climb.
+    #:
+    #: * `"capable"` -- `mission_capable`, the headline metric. Credits the
+    #:   observer **and** any relay the chain cannot route around, which is why
+    #:   it is the default.
+    #: * `"observed"` -- the sightline alone. Credits **only** observers: every
+    #:   relay scores exactly 0, because deleting a relay never removes a
+    #:   sightline. It is therefore the **ablation** that isolates which half of
+    #:   `"capable"`'s credit is doing the work -- observer credit, or observer
+    #:   *plus* relay credit.
+    #:
+    #: ⛔ **It is NOT denser, and the guess that it would be was measured false.**
+    #: 📏 Fraction of `(env, drone)` pairs with `D > 0`, 48 envs x 250 steps,
+    #: stage 4 / F4 / J1:
+    #:
+    #:     policy    capable   observed  |  D on capable   D on observed  ratio
+    #:     b0          76.7 %    86.3 %  |        10.87 %          9.40 %  0.86x
+    #:     random      16.5 %    21.6 %  |         3.52 %          3.50 %  0.99x
+    #:
+    #: 🔍 The reason is structural: `observed - observed_{-i}` needs drone `i` to
+    #: be the **sole** observer, while `capable - capable_{-i}` also fires for any
+    #: relay the router cannot go around. Multiple drones hold the ray often
+    #: enough that the sole-observer condition is the *rarer* one.
+    #:
+    #: ⚠️ One property is worth keeping in view either way: because it needs the
+    #: observer to be **sole**, a second drone joining the first drives both to
+    #: zero. It rewards *being the one who sees*, not *being near the target*,
+    #: and so is anti-clustering -- not the failure `docs/inherited/REWARD.md`
+    #: warns per-drone terms into.
+    difference_on: str = "capable"
 
     # --- potential: guidance only, provably optimum-preserving ---
     potential_scale: float = 10.0  # k: full swing worth ~10 steps of mission
@@ -212,6 +244,17 @@ OBJECTIVE_WEIGHTS = frozenset(
 #: Physical constants used for normalisation. Not a tuning knob either.
 PHYSICAL_REFERENCES = frozenset({"max_accel_ms2"})
 
+#: Fields that select a **mode** rather than scale a term. They are not weights
+#: at all, so they are neither objective weights nor inside `Phi`, and
+#: `pbrs_safe_fields()` must not claim them -- it would derive a `float` flag for
+#: a `str` field and collide with the explicit one.
+#:
+#: ⚠️ This category exists because `pbrs_safe_fields()` is a *subtraction*: a new
+#: field lands inside `Phi` by default. That default is the safe one for a
+#: weight (it demands a flag rather than going unreachable) and the wrong one for
+#: a mode. The same shape as `B0Config.repair_score`.
+REWARD_MODES = frozenset({"difference_on"})
+
 
 def pbrs_safe_fields() -> tuple[str, ...]:
     """Every `RewardWeights` field that lives inside `Phi`.
@@ -230,14 +273,19 @@ def pbrs_safe_fields() -> tuple[str, ...]:
     reachable from nowhere.
 
     ⚠️ A new field added to `RewardWeights` lands here **by default**, which is
-    the safe direction: it demands a flag rather than silently becoming
-    unreachable. `n_cover_samples` is an `int` where every other knob is a
+    the safe direction for a *weight*: it demands a flag rather than silently
+    becoming unreachable. ⛔ It is the WRONG default for a field that selects a
+    **mode** rather than scaling a term -- `pbrs_safe_fields` would derive a
+    `float` flag for a `str` field and collide with the explicit one -- so those
+    are listed in `REWARD_MODES` and subtracted here too. `n_cover_samples` is an `int` where every other knob is a
     `float`, which is exactly the case a hand-listed flag loop missed.
     """
     return tuple(
         f.name
         for f in fields(RewardWeights)
-        if f.name not in OBJECTIVE_WEIGHTS and f.name not in PHYSICAL_REFERENCES
+        if f.name not in OBJECTIVE_WEIGHTS
+        and f.name not in PHYSICAL_REFERENCES
+        and f.name not in REWARD_MODES
     )
 
 
@@ -306,6 +354,10 @@ class Snapshot:
     #: `core._evaluate` and read only when `w_difference > 0`, so it costs
     #: nothing when the term is off.
     capable_without: torch.Tensor | None = None
+    #: (B, N) -- `observed` for the swarm with drone `i` deleted, in {0, 1}. The
+    #: denser counterfactual, for `difference_on = "observed"`. Supplied by the
+    #: same call that produces `capable_without`, so it is free.
+    observed_without: torch.Tensor | None = None
     #: (B, N) bool -- is drone `i` carrying the delivery path this step? The one
     #: per-drone quantity the reward uses, and only when `w_relay > 0`.
     on_path: torch.Tensor | None = None
@@ -716,13 +768,25 @@ def difference_reward(snap: Snapshot, w: RewardWeights) -> torch.Tensor:
     """
     if w.w_difference == 0.0:
         return torch.zeros_like(snap.battery)
-    if snap.capable_without is None:
+    if w.difference_on not in ("capable", "observed"):
+        raise ValueError(f"difference_on must be 'capable' or 'observed', got {w.difference_on!r}")
+    if w.difference_on == "capable" and snap.capable_without is None:
         raise ValueError(
             "w_difference != 0 needs Snapshot.capable_without; the env supplies it "
             "when weights.w_difference is non-zero, a hand-built Snapshot must too"
         )
-    capable = mission_capable(snap).to(snap.battery.dtype)
-    return w.w_difference * (capable.unsqueeze(-1) - snap.capable_without.to(snap.battery.dtype))
+    if w.difference_on == "observed":
+        if snap.observed_without is None:
+            raise ValueError(
+                "difference_on='observed' needs Snapshot.observed_without; the env "
+                "supplies it when weights.w_difference is non-zero"
+            )
+        whole = snap.observed.to(snap.battery.dtype)
+        without = snap.observed_without.to(snap.battery.dtype)
+    else:
+        whole = mission_capable(snap).to(snap.battery.dtype)
+        without = snap.capable_without.to(snap.battery.dtype)
+    return w.w_difference * (whole.unsqueeze(-1) - without)
 
 
 def team_reward(snap: Snapshot, w: RewardWeights) -> torch.Tensor:
