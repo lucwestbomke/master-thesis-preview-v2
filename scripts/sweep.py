@@ -51,6 +51,7 @@ cells is exactly the kind of comparison this file exists to prevent.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import itertools
 import json
 import shutil
@@ -141,6 +142,47 @@ def parse_axis(spec: str) -> tuple[str, list[str]]:
 def config_key(cfg: dict[str, str]) -> str:
     """Stable identity for a configuration, used for tags and for resume."""
     return "_".join(f"{k}{cfg[k]}" for k in sorted(cfg)).replace(".", "p").replace("-", "m")
+
+
+def context_suffix(train_arg: list[str]) -> str:
+    """A short stable tag for the FIXED arguments a sweep holds constant.
+
+    ☠️ **Without this, two sweeps over the same axis silently merge.** The key is
+    built from the swept values alone, and it is used for three things: the resume
+    set read out of `--out`, the run directory `sw-{key}-s{seed}`, and the row
+    written to the results file. So
+
+        sweep --axis gae_lambda=0.95,0.99 --out r.jsonl
+        sweep --axis gae_lambda=0.95,0.99 --out r.jsonl --train-arg mini-batch-size=4096
+
+    produces `gae_lambda0p95` twice. The second invocation skips every cell as
+    "already recorded", and if it did run it would find the first one's
+    checkpoints and score those instead. **Both failures are silent and both
+    produce a plausible table.**
+
+    🔒 Empty when there are no `--train-arg`s, so every key already written to
+    `results/sweep_summary.jsonl` still resumes exactly as before.
+    """
+    if not train_arg:
+        return ""
+    digest = hashlib.sha1("|".join(sorted(train_arg)).encode()).hexdigest()[:6]
+    return f"__{digest}"
+
+
+#: 🔒 Flags `build_train_cmd` sets itself. ⛔ `--train-arg` must not shadow any of
+#: them, because `argparse` takes the LAST occurrence and the shadow wins
+#: silently.
+#:
+#: ☠️ `tag` is the one that bites. Every cell would then train into the SAME
+#: directory, while `train_one`'s resume check still looks under the sweep's own
+#: per-configuration tag -- so each cell trains, writes somewhere else, and the
+#: path handed to scoring does not exist. The sweep produces a full table of
+#: `"status": "failed"` rows, or worse, scores a checkpoint from another cell.
+#:
+#: ⚠️ The `--axis` clash is already guarded below. This is its sibling and was
+#: missing: a runbook command written 2026-09-04 used `--train-arg tag=gateE`
+#: and would have destroyed a 12-run sweep.
+OWNED_FLAGS: frozenset[str] = frozenset({"device", "seeds", "timesteps", "tag", "out-root"})
 
 
 def build_train_cmd(a, cfg: dict[str, str], seed: int, tag: str) -> list[str]:
@@ -299,6 +341,18 @@ def main() -> None:
 
     if not a.axis:
         raise SystemExit("no --axis given; nothing to sweep")
+    shadowed = sorted(
+        {extra.partition("=")[0].lstrip("-").replace("_", "-") for extra in a.train_arg}
+        & OWNED_FLAGS
+    )
+    if shadowed:
+        raise SystemExit(
+            f"--train-arg sets {shadowed}, which sweep.py sets itself. argparse takes "
+            "the LAST occurrence, so the override would win silently -- and for "
+            "`tag` that means every configuration trains into one directory while "
+            "the resume check looks under the sweep's own per-cell tag. Use "
+            "--run-root to place the runs, and --out to name the results file."
+        )
     overlap = set(a.seeds) & set(a.confirm_seeds)
     if overlap and not a.no_confirm:
         raise SystemExit(
@@ -337,7 +391,7 @@ def main() -> None:
     )
     if a.dry_run:
         for i, cfg in enumerate(grid, 1):
-            print(f"    {i:>3}. {config_key(cfg)}", flush=True)
+            print(f"    {i:>3}. {config_key(cfg) + context_suffix(a.train_arg)}", flush=True)
         return
 
     a.out.parent.mkdir(parents=True, exist_ok=True)
@@ -351,7 +405,7 @@ def main() -> None:
 
     sha = git_sha()
     for i, cfg in enumerate(grid, 1):
-        key = config_key(cfg)
+        key = config_key(cfg) + context_suffix(a.train_arg)
         if key in done:
             print(f"  [{i}/{len(grid)}] {key}  — already recorded, skipping", flush=True)
             continue

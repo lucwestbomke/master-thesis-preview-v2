@@ -18,7 +18,15 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.sweep import AXES, build_score_cmd, build_train_cmd, config_key, parse_axis
+from scripts.sweep import (
+    AXES,
+    OWNED_FLAGS,
+    build_score_cmd,
+    build_train_cmd,
+    config_key,
+    context_suffix,
+    parse_axis,
+)
 
 SWEEP = ROOT / "scripts" / "sweep.py"
 
@@ -189,3 +197,79 @@ def test_every_axis_maps_to_a_flag_train_py_actually_accepts() -> None:
     ).stdout
     for name, flag in AXES.items():
         assert flag in help_text, f"axis {name!r} maps to {flag}, which train.py does not accept"
+
+
+# --------------------------------------------------------------------------- #
+# Two silent-collision traps, both found by dry-running the runbook 2026-09-04.
+# Neither raised anything; both produced a plausible, wrong table.
+# --------------------------------------------------------------------------- #
+
+
+def test_a_fixed_flag_may_not_shadow_one_the_sweep_sets_itself() -> None:
+    """☠️ `--train-arg tag=…` was in the first draft of the Gate D runbook.
+
+    `build_train_cmd` already passes `--tag`, argparse takes the LAST occurrence,
+    so the override wins silently: every configuration trains into one directory
+    while `train_one`'s resume check still looks under the sweep's own per-cell
+    tag. The result is a table of failures, or — worse — a cell scored against
+    another cell's checkpoint.
+    """
+    r = run(
+        "--axis",
+        "lr=1e-4,3e-4",
+        "--train-arg",
+        "tag=gateE",
+        "--dry-run",
+        "--out",
+        "/tmp/nope.jsonl",
+    )
+    assert r.returncode != 0
+    assert "sweep.py sets itself" in r.stderr + r.stdout
+
+    # every flag build_train_cmd emits must be covered by the guard, or the next
+    # one added reopens the hole
+    cmd = build_train_cmd(_ns(), {"lr": "3e-4"}, seed=0, tag="t")
+    emitted = {c.lstrip("-") for c in cmd if c.startswith("--")}
+    assert emitted <= OWNED_FLAGS | set(AXES.values()) | {v.lstrip("-") for v in AXES.values()}, (
+        f"build_train_cmd emits {emitted - OWNED_FLAGS}, which OWNED_FLAGS does not guard"
+    )
+
+
+def test_two_sweeps_over_one_axis_with_different_fixed_args_do_not_collide() -> None:
+    """☠️ The cell key is built from the SWEPT values alone, so λ = 0.95 under the
+    shipped budget and λ = 0.95 under the new budget were the same key.
+
+    The second sweep skips every cell as "already recorded"; had it run, it would
+    have found the first sweep's checkpoints under the same tag and scored those.
+    Both failures are silent.
+    """
+    cfg = {"gae_lambda": "0.95"}
+    plain = config_key(cfg) + context_suffix([])
+    budget = config_key(cfg) + context_suffix(
+        ["mini-batch-size=4096", "target-kl=0.015", "orthogonal-init"]
+    )
+    assert plain != budget
+
+    # 🔒 unchanged with no --train-arg, so every key already in
+    # results/sweep_summary.jsonl still resumes
+    assert context_suffix([]) == ""
+    assert plain == config_key(cfg)
+
+    # order-independent, or a re-run with the flags typed differently re-does the work
+    assert budget == config_key(cfg) + context_suffix(
+        ["orthogonal-init", "mini-batch-size=4096", "target-kl=0.015"]
+    )
+    # filesystem-safe, since it becomes a run directory name
+    assert budget.replace("_", "").replace("p", "").isalnum()
+
+
+def test_a_negative_value_survives_train_arg_into_a_variadic_flag() -> None:
+    """`--min-log-std` takes `nargs="+"` and Gate D passes it `-1.6`. argparse
+    treats a leading `-` as an option unless it parses as a negative number, and
+    the sweep forwards these blind — so this is checked rather than assumed."""
+    cmd = build_train_cmd(
+        _ns(train_arg=["min-log-std=-1.6", "orthogonal-init"]), {"lr": "3e-4"}, seed=0, tag="t"
+    )
+    assert "--min-log-std" in cmd and "-1.6" in cmd
+    # a bare switch must take no value
+    assert cmd[cmd.index("--orthogonal-init") + 1].startswith("--")

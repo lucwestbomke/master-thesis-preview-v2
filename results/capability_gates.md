@@ -82,34 +82,35 @@ the reason Gate E changes the **return** rather than adding a ninth knob.
 
 ### Conditions
 
-🔒 **Control** — the shipped defaults, unchanged, so this is a paired comparison
-against a re-run rather than against a number from a different code state:
+🔒 **A 2 × 4 factorial: `{shipped budget, new budget} × λ ∈ {0.95, 0.98, 0.99,
+0.995}`**, 3 seeds on the train split, then the winner at 5 fresh seeds on eval.
+⛔ The exact commands are in **The runbook** below and are not duplicated here —
+a second copy is a second thing to get out of step.
 
-```bash
-uv run python scripts/train.py --arch deepsets --cadence deep --timesteps 12000000 \
-    --device cuda --seeds 0 1 2 3 4 --tag gateD-control
-```
+⚠️ **Amended 2026-09-04, before any run.** The first draft of this gate was a
+single treatment arm that bundled `--gae-lambda 0.99` with the four optimiser
+knobs. It could not have separated λ from the step count, and at ~5 min a run it
+does not have to. 🔒 Recorded rather than silently replaced: nothing had been run
+against the first version, so this is an amendment to a declaration, not a rule
+changed after seeing a result.
 
-🔒 **Treatment** — the optimisation budget only. ⛔ No reward change and no
-observation change, so a difference is attributable to *the optimiser*.
+* 🔒 **Control** — the shipped defaults at λ = 0.95, i.e. the `(shipped, 0.95)`
+  cell. A **re-run**, not a number quoted from a different code state.
+* 🔒 **Budget arm** — `--mini-batch-size 4096 --target-kl 0.015
+  --grad-norm-clip-critic 1.0 --orthogonal-init --min-log-std -1.6`. ⛔ No reward
+  change and no observation change, so a difference is attributable to *the
+  optimiser*.
 
-⚠️ **It bundles five knobs, and that is deliberate.** This is a **screening**
-arm, not an ablation: the question is whether the budget binds at all, and five
-one-at-a-time arms would cost 5× to answer a yes/no. 🔒 If it PROMOTES, the
-ablation is owed before anything is claimed about *which* knob mattered — and
-`--orthogonal-init` is the one to drop first, since it is the only one that
-changes the network rather than the optimiser.
-
-```bash
-uv run python scripts/train.py --arch deepsets --cadence deep --timesteps 12000000 \
-    --device cuda --seeds 0 1 2 3 4 --tag gateD-budget \
-    --mini-batch-size 4096 --target-kl 0.015 --grad-norm-clip-critic 1.0 \
-    --orthogonal-init --min-log-std -1.6 --gae-lambda 0.99
-```
-
-📏 `--mini-batch-size 4096` takes the run from 5,888 to ~58,900 Adam steps at
+📏 `--mini-batch-size 4096` takes a run from 5,888 to ~58,900 Adam steps at
 **essentially unchanged FLOPs** — the same rows are visited the same number of
 times per epoch; only kernel-launch overhead grows.
+
+⚠️ **The budget arm bundles five knobs, and that is deliberate.** It is a
+**screening** arm: the question is whether the budget binds at all, and five
+one-at-a-time arms cost 5× to answer a yes/no. 🔒 If it promotes, the ablation is
+owed before anything is claimed about *which* knob mattered, and
+`--orthogonal-init` is the one to drop first — it is the only one that changes
+the network rather than the optimiser.
 
 ### ⭐ 📏 Why `--gae-lambda` is in the treatment and not in a footnote
 
@@ -148,9 +149,21 @@ non-moving policy cannot be reported as evidence that movement does not help.
 
 ### 🔒 The decision rule
 
-Δ is treatment − control on median `mission_capable`, eval split, 5 seeds.
+🔒 **Δ is the best cell minus the `(shipped budget, λ = 0.95)` control**, on
+median `mission_capable`, eval split, 5 fresh seeds — the confirmation run, not
+the search score. ⚠️ The search score is biased upward by selection over 8 cells;
+`sweep.py` prints both side by side and 🔒 **if they disagree, the disagreement is
+the finding.** That is exactly the `45.1 %` cell `BLOCK_G` records as the winner's
+curse.
+
 ⚠️ The branches partition the real line. *(Gate A and `trainer_validation.md`
 each recorded a rule that failed to; this one is written not to.)*
+
+📏 **Reported alongside, and it is the interesting half**: the λ main effect
+within each budget, and whether they interact. The claim under test is that they
+are **complementary** — λ decides what signal exists in the advantage, the budget
+decides whether the policy can move on it — so *"λ helps only under the new
+budget"* is a prediction this design can confirm or refute.
 
 | branch | rule | what it means |
 |---|---|---|
@@ -228,11 +241,10 @@ at 3 seeds, on median `mission_capable`, ties to the smaller IQR.
 Control is **Gate D's promoted configuration** with `--w-difference 0`, same
 seeds, same everything else.
 
-```bash
-# stage A -- train split, 3 seeds, one axis
-uv run python scripts/sweep.py --axis w_difference=0.5,1.0,2.0 --seeds 0 1 2 \
-    --train-arg tag=gateE
-```
+⛔ Commands in **The runbook**. 🔒 Gate D's winning λ *and* its winning budget
+are forwarded as `--train-arg`, or the comparison is against a policy that cannot
+train — and `--train-arg tag=…` is now **refused** by `sweep.py`, because the
+draft that used it would have destroyed the sweep.
 
 ### 🔒 Validity precondition
 
@@ -272,11 +284,18 @@ has done something this file did not predict.
 
 ## Gate F — is the observation lying to the policy?
 
-⚠️ **Third in order and lowest prior.** [`obs_mask_gate.md`](obs_mask_gate.md)
-already masked nine features for a null, so the base rate for observation
-surgery in this environment is low. It is built and gated anyway because the two
-findings below are of a different kind from a masked feature — one is a
-*misleading* input, the other is a *degenerate training stage*.
+⚠️ **Two arms with very different priors, and they must not be pooled.**
+
+* ⭐ **F1 + F2 — the cue and the curriculum.** 📏 Now the best-motivated
+  intervention in this file: a cue-following policy scores **94 % of B0 at stage
+  1** and **6.1 % at stage 4**, and the first 15 % of training is entirely stage
+  1. This is *shortcut learning*, not feature clutter.
+* ⛔ **F3 — the broadcast features.** Low prior:
+  [`obs_mask_gate.md`](obs_mask_gate.md) already masked nine features for a null,
+  so the base rate for observation surgery here is poor.
+
+🔒 Run them as separate axes. Pooling them would let F3's expected null bury
+F1/F2, or let F1/F2 launder F3.
 
 ### 📏 F1 — the cue is stale, and it is never marked as such
 
@@ -295,20 +314,50 @@ which is what `BLOCK_D.md` meant by *"it decays in range rather than in
 direction"*. `EnvConfig.cue_mode` reports `position` / `bearing` / `off` at
 unchanged width.
 
-### 📏 F2 — `STAGES[0]` has a closed-form solution
+### ⭐ 📏 F2 — `STAGES[0]` is degenerate, and it is now measured
 
 `CurriculumStage(150, speed_scale=0.00, …, cue_sigma_m=0.0)`: the target **does
-not move** and the cue points at it **exactly**. Stage 1 is *"fly to the vector
-in ego dims 4–6 and hover"* — solvable by a linear policy on `cue_rel`. It is
-15 % of training, plus a 20 % mix for the rest of the run.
+not move** and the cue points at it **exactly**.
 
-⚠️ **Consistent with the curves, not established by them.** All five
+📏 **Scored directly.** A policy that does nothing but servo every drone toward
+`cue_rel` — no sensing, no roles, no neighbour awareness, no chain reasoning,
+using B0's own velocity law on one input — against B0, F4/J1, 64 envs, one full
+episode per stage:
+
+| stage | cue-follower `capable` | B0 `capable` | ratio |
+|---|---|---|---|
+| **1** | **81.6 %** | 87.0 % | **0.94x** |
+| 2 | 40.0 % | 90.4 % | 0.44x |
+| 3 | 10.9 % | 69.8 % | 0.16x |
+| **4** | **6.1 %** | 60.0 % | **0.10x** |
+
+☠️ **A one-line policy scores 94 % of the heuristic at stage 1 — and 6.1 % at
+stage 4, which is BELOW random's 10.7 %.** 🔍 At stage 1 the cue-follower's
+`capable` equals its `observed` exactly (81.6 / 81.6): all five drones pile onto
+one point above a stationary target and the chain still closes, because the
+MCV→HVT separation at `t = 0` has a median of only 404 m and one hop covers it.
+
+📏 **The exposure.** Integrating `CurriculumSchedule.weights()` over a run, stage
+1 is **24.2 % of episodes** but — because its episodes are 150 steps against
+stage 4's 600 — only **9.2 % of env-steps**. ⚠️ That is *less* than an earlier
+draft of this file implied and is recorded as the correction it is. But the
+**first 15 % of training is 100 % stage 1**, which is where the basin is chosen.
+
+⚠️ **What this does NOT show.** It shows the stage is solvable degenerately. It
+does **not** show the learned policy is trapped there — that is the inference, and
+it is what the run tests. Corroborating but not decisive: all five
 `runs/val-gnn-deep-s*` seeds peak at progress **0.20–0.33** and end lower
 (peaks 0.453 / 0.526 / 0.560 / 0.491 / 0.628; finals 0.156 / 0.454 / 0.398 /
-0.335 / 0.455). ⛔ Those peaks are measured on *easier* curriculum stages and are
-**not** comparable to a stage-4 eval number. The shape is 5/5; the attribution is
-a hypothesis. `--curriculum-boundaries` and `--curriculum-mix` are the knobs.
-`BLOCK_G` already lists the schedule as *provisional and never measured*.
+0.335 / 0.455). ⛔ Those peaks are measured on *easier* stages and are **not**
+comparable to a stage-4 eval number.
+
+🔍 **Two independent routes to the same fix, and they should be run separately.**
+`--curriculum-boundaries 0.05 0.30 0.55` shortens the degenerate stage;
+`--cue-mode bearing` removes the shortcut's key input *structurally* — a bearing
+cannot be servoed to a point, so "fly here and hover" stops being expressible,
+while acquisition (which needs only the bearing, and which B0's fan uses) is
+preserved. `BLOCK_G` already lists the schedule as *provisional and never
+measured*.
 
 ### 📏 F3 — two ego features carry no role information at all
 
@@ -346,28 +395,102 @@ other setting is not the baseline.
 ## The runbook
 
 📏 At the measured CUDA throughput a 12 M-step run is ~2.6 min, and
-`--mini-batch-size 4096` adds ~1–2 min of optimizer time. Call it **5 min a run**,
-so the whole programme below is **~4 GPU-hours**.
+`--mini-batch-size 4096` adds ~1–2 min of optimizer time. Call it **5 min a run**.
+`scripts/sweep.py` is the tool: it searches on the **train** split, ranks on the
+**worst** seed, re-runs the winner at **fresh** seeds on eval, and is resumable.
+
+### ☠️ Two traps, both found by dry-running these commands
+
+⛔ **`--train-arg tag=…` is refused, and a first draft of this file used it.**
+`build_train_cmd` already passes `--tag`; a second one wins silently, every cell
+trains into one directory, and `train_one`'s resume check still looks under the
+sweep's own per-cell tag. `OWNED_FLAGS` now rejects it. Use `--run-root`.
+
+⛔ **Two sweeps over the same axis need different `--out` AND different
+`--run-root`.** The cell key is built from the swept values alone, so
+`gae_lambda=0.95` under the shipped budget and under the new budget were the same
+key: the second sweep skipped every cell as *"already recorded"*, and had it run
+it would have scored the first sweep's checkpoints. `context_suffix()` now hashes
+the `--train-arg` set into the key. 🔒 Empty when there are none, so every row
+already in `results/sweep_summary.jsonl` still resumes.
+
+### Gate D — λ × budget, as a 2 × 4
+
+⚠️ **Amended 2026-09-04, before any run.** The first draft bundled
+`--gae-lambda 0.99` into a five-knob screening arm, which could not separate λ
+from the step count. Compute is ~5 min a run, so it does not have to.
+
+🔍 **Why a factorial and not one-at-a-time.** The claim is that the two are
+**complementary**: λ decides what signal exists in the advantage, the budget
+decides whether the policy can move on it. That is an interaction, and a
+one-at-a-time sweep cannot see it. Two axes is inside `sweep.py`'s own *"a grid
+is not a search strategy for more than ~3 axes"*.
 
 ```bash
-# Gate D -- 2 conditions x 5 seeds
-uv run python scripts/train.py --arch deepsets --cadence deep --device cuda     --seeds 0 1 2 3 4 --tag gateD-control
-uv run python scripts/train.py --arch deepsets --cadence deep --device cuda     --seeds 0 1 2 3 4 --tag gateD-budget     --mini-batch-size 4096 --target-kl 0.015 --grad-norm-clip-critic 1.0     --orthogonal-init --min-log-std -1.6
+# λ against the SHIPPED optimisation budget
+uv run python scripts/sweep.py --axis gae_lambda=0.95,0.98,0.99,0.995 \
+    --seeds 0 1 2 --device cuda \
+    --run-root runs/gateD-shipped --out results/gateD_shipped.jsonl
 
-uv run python scripts/eval_policy.py runs/gateD-control-s*/checkpoint.pt     --group gateD/control --device cuda --out results/capability.jsonl
-uv run python scripts/eval_policy.py runs/gateD-budget-s*/checkpoint.pt     --group gateD/budget --device cuda --out results/capability.jsonl
+# λ against the NEW budget. ⛔ Different --run-root and --out, per the trap above.
+uv run python scripts/sweep.py --axis gae_lambda=0.95,0.98,0.99,0.995 \
+    --seeds 0 1 2 --device cuda \
+    --train-arg mini-batch-size=4096 --train-arg target-kl=0.015 \
+    --train-arg grad-norm-clip-critic=1.0 --train-arg orthogonal-init \
+    --train-arg min-log-std=-1.6 \
+    --run-root runs/gateD-budget --out results/gateD_budget.jsonl
+```
 
-# Gate E -- stage A on the TRAIN split, then the winner at 5 seeds on eval
-uv run python scripts/sweep.py --axis w_difference=0.0,0.5,1.0,2.0 --seeds 0 1 2
+📏 24 runs, ~2 GPU-hours. ✅ `--train-arg min-log-std=-1.6` is verified to survive
+argparse's negative-number handling into the `nargs="+"` flag.
 
-# Gate F -- one axis at a time
-uv run python scripts/sweep.py --axis cue_mode=position,bearing,off --seeds 0 1 2
-uv run python scripts/sweep.py --axis curriculum_mix=0.2,0.05 --seeds 0 1 2
+⚠️ **The budget arm still bundles five knobs.** That is a **screening** arm on
+purpose: the question is whether the budget binds at all. 🔒 If it promotes, the
+ablation is owed before anything is claimed about *which* knob mattered, and
+`--orthogonal-init` is the one to drop first — it is the only one that changes
+the network rather than the optimiser.
+
+### Gate E — the difference reward
+
+🔒 Held at Gate D's winning λ **and** its winning budget, forwarded as
+`--train-arg`, or the comparison is against a policy that cannot train.
+
+```bash
+uv run python scripts/sweep.py --axis w_difference=0.0,0.5,1.0,2.0 \
+    --seeds 0 1 2 --device cuda \
+    --train-arg gae-lambda=<gateD winner> \
+    --train-arg mini-batch-size=4096 --train-arg target-kl=0.015 \
+    --train-arg grad-norm-clip-critic=1.0 --train-arg orthogonal-init \
+    --train-arg min-log-std=-1.6 \
+    --run-root runs/gateE --out results/gateE.jsonl
+
+# the ablation: does the RELAY half of D_i's credit matter?
+uv run python scripts/sweep.py --axis difference_on=capable,observed \
+    --seeds 0 1 2 --device cuda --train-arg w-difference=<gateE winner> \
+    --run-root runs/gateE-target --out results/gateE_target.jsonl
+```
+
+### Gate F — two axes, never pooled
+
+```bash
+# F1/F2 -- the cue and the curriculum. ⭐ The better-motivated arm.
+uv run python scripts/sweep.py --axis cue_mode=position,bearing,off \
+    --seeds 0 1 2 --device cuda --run-root runs/gateF-cue --out results/gateF_cue.jsonl
+uv run python scripts/sweep.py --axis curriculum_mix=0.2,0.05 \
+    --seeds 0 1 2 --device cuda --run-root runs/gateF-mix --out results/gateF_mix.jsonl
+# ⚠️ --curriculum-boundaries takes THREE values and is not an --axis (axes pass
+# one value); run it as two explicit conditions via --train-arg.
+
+# F3 -- the broadcast features. ⛔ Low prior; a bare switch takes no value.
+uv run python scripts/sweep.py --axis gae_lambda=<winner> --seeds 0 1 2 \
+    --device cuda --train-arg mask-broadcast-obs \
+    --run-root runs/gateF-bcast --out results/gateF_bcast.jsonl
 ```
 
 ⚠️ **Read `n` before quoting anything** — [`README.md`](README.md) records an
 interrupted-and-resumed sweep that appended rows unconditionally and reported
-`n = 9` where 5 were asked for.
+`n = 9` where 5 were asked for. And ⛔ a cell whose training failed is written
+with `"status": "failed"` and excluded from ranking; check for those first.
 
 ---
 

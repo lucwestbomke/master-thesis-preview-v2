@@ -345,9 +345,14 @@ is interpretable given the one before it.
 |---|---|---|---|
 | **D** | is the policy **optimisation-limited**? | `--mini-batch-size`, `--target-kl`, `--grad-norm-clip-critic`, `--orthogonal-init`, `--min-log-std`, and 📏 **`--gae-lambda`, never swept in this project's history** | It gates everything. Its NULL branch is a real result: it removes the confound from all eight prior nulls and makes [`credit_assignment.md`](results/credit_assignment.md) *stronger* |
 | **E** | does **per-drone credit** produce roles? | `--w-difference` — `D_i = G(z) − G(z_{−i})`, the mission term recomputed with drone `i` deleted, exactly | The successor axis `credit_assignment.md` names. ⛔ Only interpretable on a policy that can actually train, hence after D |
-| **F** | is the **observation** lying to the policy? | `--cue-mode`, `--mask-broadcast-obs`, `--curriculum-boundaries` | ⚠️ **Lowest prior**: [`obs_mask_gate.md`](results/obs_mask_gate.md) already masked nine features for a null |
+| **F** | is the **observation** lying to the policy, and is the **curriculum** teaching a shortcut? | `--cue-mode`, `--curriculum-boundaries` / `--curriculum-mix`, `--mask-broadcast-obs` | ⚠️ **Two arms, very different priors, never pooled.** ⭐ The cue/curriculum arm is now measured (below); the broadcast-feature arm keeps `obs_mask_gate.md`'s null prior |
 
-📏 **Why λ belongs in Gate D and not in a footnote.** At `γ = 0.997, λ = 0.95` the
+🔒 **Gate D is a 2 × 4 factorial**, `{shipped budget, new budget} × λ ∈ {0.95,
+0.98, 0.99, 0.995}` — amended 2026-09-04 *before any run*, because the first
+draft bundled λ into a five-knob arm that could not separate it from the step
+count. At ~5 min a run it does not have to.
+
+📏 **Why λ is an axis and not a footnote.** At `γ = 0.997, λ = 0.95` the
 advantage weights rewards by `(γλ)^l = 0.947^l` — an effective horizon of **18.9
 steps, 7.6 seconds**. B0's observer tenure is **294.7 steps, 118 s**. ⛔ **The
 advantage sees 6 % of the behaviour it is supposed to credit.** `λ = 0.99` gives
@@ -355,6 +360,31 @@ advantage sees 6 % of the behaviour it is supposed to credit.** `λ = 0.99` give
 from the other side: *"GAE accumulates the team component coherently over ~19
 effective steps while per-drone terms largely cancel"* — so λ gates whether `D_i`
 reaches the gradient at all.
+
+⭐ 📏 **`STAGES[0]` is degenerate, and it is measured.** A policy that does
+nothing but servo every drone toward `cue_rel` — no sensing, no roles, no
+neighbours, no chain reasoning — scores against B0 at F4/J1, 64 envs, one full
+episode per stage:
+
+| stage | cue-follower | B0 | ratio |
+|---|---|---|---|
+| **1** | **81.6 %** | 87.0 % | **0.94x** |
+| 2 | 40.0 % | 90.4 % | 0.44x |
+| 3 | 10.9 % | 69.8 % | 0.16x |
+| **4** | **6.1 %** | 60.0 % | **0.10x** |
+
+☠️ **A one-line policy scores 94 % of the heuristic at stage 1, and 6.1 % at
+stage 4 — below random's 10.7 %.** The first 15 % of training is 100 % stage 1.
+📏 Integrated over a run, stage 1 is **24.2 % of episodes** but only **9.2 % of
+env-steps**, since its episodes are 150 steps against stage 4's 600 — ⚠️ *less*
+exposure than an earlier draft of this section implied.
+
+⚠️ It shows the stage is solvable degenerately. It does **not** show the learned
+policy is trapped there; that is the inference Gate F tests. 🔍 Two independent
+routes to the same fix: `--curriculum-boundaries` shortens the stage, and
+`--cue-mode bearing` removes the shortcut *structurally* — a bearing cannot be
+servoed to a point, so "fly here and hover" stops being expressible, while
+acquisition (which needs only the bearing, and which B0's own fan uses) survives.
 
 🔒 **Excluded by decision, 2026-09-04**, and both are recorded so they are not
 quietly re-litigated:
