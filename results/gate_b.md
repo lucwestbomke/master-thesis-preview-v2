@@ -227,3 +227,56 @@ for J in J1 J3B; do
       --seeds 5 --num-envs 128 --out results/gate_b_nodivision.jsonl
 done
 ```
+
+## 📏 The control — measured 2026-09-04. ⛔ The division confound is **REFUTED**.
+
+`results/gate_b_nodivision.jsonl`, cuda:0, eval split, 5 seeds × 128 episodes,
+same harness. `capable_no_division` re-scores at `reuse_limit = 1`.
+
+| policy | gap (`mission_capable`) | gap (`capable_no_division`) | change | hops |
+|---|---|---|---|---|
+| **B0** | 13.24 pp | **12.85 pp** | **−0.39** | 2.13 |
+| gnn, trained at J1 | 11.12 pp | **5.46 pp** | −5.66 | 1.20 |
+| gnn, co-trained at J2 | 7.51 pp | **0.44 pp** | −7.07 | 1.11 |
+| gnn, co-trained at J3B | 7.29 pp | **1.66 pp** | −5.63 | 1.09 |
+
+🔒 **The declared rule fires on the "not the explanation" branch, emphatically.**
+B0's gap was to *"stay well above the learned policies'"*: it is **12.85** against
+**0.44–5.46**, and B0's own gap moved by **0.39 pp**. ⛔ Rate division is not what
+makes B0 exploitable. Gate B survives its own control.
+
+### ☠️ But read the other three rows, because they are the uncomfortable half
+
+Removing division *collapses* every learned policy's exploitability — `advtrain-J2`
+falls to **0.44 pp**. The jammer barely touches it. 📏 Why:
+
+| policy | rung | `no-div` | `observed` | **`no-div` \| `observed`** |
+|---|---|---|---|---|
+| B0 | J1 | 84.3 % | 92.8 % | **0.908** |
+| B0 | J3B | 72.6 % | 92.8 % | **0.782** |
+| advtrain-J2 | J1 | 51.6 % | 58.1 % | 0.887 |
+| advtrain-J2 | J3B | 51.3 % | 62.3 % | 0.823 |
+
+🔍 **The learned policies are at their SENSOR ceiling, not their link ceiling.**
+Their binding constraint is *seeing the target*; an adversary that only degrades
+links has almost nothing left to take once division is gone. B0's link headroom is
+real, and the jammer eats it — 0.908 → 0.782.
+
+⛔ So *"the co-trained policy is robust"* partly means *"the co-trained policy is
+already so limited by its sensor that the link was never its bottleneck."* That is
+a materially weaker claim than the headline, and it must be written that way.
+
+### ⚠️ Half the confound survives, and it is the half that was always harder
+
+The control closed the **rate-division** mechanism. It does not close **"a longer
+chain has more links for the beam to find"** — and B0 runs 2.26 hops *conditioned
+on observing* against the learned 1.91 (`docs/inherited/BLOCK_G.md`), because it
+parks its observer at 89 m while they stand off at 213 m.
+
+🔍 **That is the same property that makes B0 good.** Going in close is what buys
+92.8 % `observed`; going in close is what requires a long, attackable relay path.
+**Capability and exploitability are coupled through the chain**, and no
+measurement here separates them.
+
+⛔ **A hop-matched comparison would**, and no policy in this project supplies one.
+Stated as an open limitation rather than resolved.
