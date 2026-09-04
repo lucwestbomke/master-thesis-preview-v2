@@ -187,8 +187,11 @@ def score(a, name: str, checkpoint: Path | None, num_drones: int) -> dict[str, l
             def policy(_obs, _b=b, _n=n, _gen=gen, _env=env):
                 return torch.empty(_b, _n, 3, device=_env.device).uniform_(-1, 1, generator=_gen)
 
-        elif name == "b0":
-            pol = B0Policy(b, n, variant="b0", device=env.device, action_space=env.cfg.action_space)
+        elif name in ("b0", "b0-geodesic"):
+            variant = "geodesic" if name == "b0-geodesic" else "b0"
+            pol = B0Policy(
+                b, n, variant=variant, device=env.device, action_space=env.cfg.action_space
+            )
             on_reset = pol.reset
 
             def policy(obs, _pol=pol):
@@ -227,7 +230,17 @@ def _append(path: Path, row: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("checkpoints", nargs="*", type=Path)
-    ap.add_argument("--policy", nargs="*", default=[], choices=["random", "b0"])
+    ap.add_argument(
+        "--policy",
+        nargs="*",
+        default=[],
+        choices=["random", "b0", "b0-geodesic"],
+        help="🔍 `b0-geodesic` is the SAME scripted family at lower capability -- "
+        "roles fixed by index, no belief filter, no link repair, 📏 47.1 %% against "
+        "B0's 57.2 %%. It is the control that separates 'scripted' from 'capable' in "
+        "results/gate_b.md's frontier question. ⛔ `b0-oracle` is deliberately absent: "
+        "it needs ground truth through an explicit channel this harness does not open",
+    )
     ap.add_argument("--fidelity", default="F4", choices=["F0", "F1", "F2", "F3", "F4"])
     ap.add_argument(
         "--jammer",
