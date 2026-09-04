@@ -176,46 +176,53 @@ the same standard: §7 runs 1 and 2 exist to break it.
 
 ## 7. The roadmap
 
-🔒 **Ordered by evidence-per-hour, not by ambition.** Runs 1–3 need **no
-training** — they score policies that already exist.
+🔒 **Ordered by what the thesis is for.** ⚠️ An earlier version of this section
+ordered by evidence-per-hour and put the scripted controls first — which leads
+somewhere this project does not want to go, because if a B0 variant is the
+frontier-breaking policy then the deliverable is *an improved heuristic*. Runs 2–4
+are controls and need no training; **run 1 is the policy** and it is first.
 
-### Run 1 — the constructive test. ⭐ **Do this first.** Zero training.
+### Run 1 — ⭐ **the policy.** Training, ~30 min for both arms.
 
-🔍 `B0Config.repair_score` already takes **`"clearance"`** instead of
-`"capacity"`. 📏 `_clearance` is **pure geometry**; the jammer enters only at
-`denom_mw` in SINR. **So `repair_score="clearance"` is a repair loop hill-climbing
-on a quantity the jammer cannot touch** — an adaptive policy that is *open-loop
-with respect to the adversary*.
+📏 `obs["flat"]` carries **nine** features the emitter can move: `noise_dbm`,
+`e2e_capacity`, and each neighbour's edge capacity. Everything else is geometry,
+kinematics or the sensor — and 🔒 `clr_hvt`, `clr_mcv` and the per-edge *clearance*
+come from building occlusion, which the jammer **cannot touch**.
+
+`--mask-jammed-obs` zeroes exactly those nine. **The result is a policy that can
+still adapt — on geometry — but has no loop on the quantity it is attacked
+through.** That is the learned counterpart of `repair_score="clearance"`, and it
+is the policy this project is actually trying to build: adaptive, capable, and
+not exploitable.
 
 | | prediction |
 |---|---|
-| **claim survives, constructively** | capability stays well above geodesic's 45.6 %, exploitability stays near geodesic's 6.39 pp. **That is the frontier-breaking policy**, and it is a one-word config change |
-| **claim survives, plainly** | capability *and* exploitability both track `"capacity"`. Clearance is a proxy the jammer reaches indirectly through the routed chain |
-| **claim is in trouble** | exploitability stays at B0's 13.24 pp with no capability gain. The loop's *target* is then not what matters, and the mechanism in §1 is wrong |
+| **the claim holds constructively** | capability within ~2 pp of the unmasked control, exploitability falling toward `b0-geodesic`'s 6.39 pp. ⭐ **That is the result the thesis wants** — a learned policy off the tradeoff |
+| **the claim holds, expensively** | capability drops with exploitability. The loop was load-bearing for capability too, and the trade is real rather than avoidable |
+| **null** | neither moves. 📏 Plausible: the learned policies already sit at their **sensor** ceiling (`no-div \| observed` = 0.887), so their loop on capacity may be doing very little to begin with |
 
-⛔ Declare the rule in `results/repair_score_gate.md` **before** running.
+🔒 Declare the rule in `results/obs_mask_gate.md` **before** running. Control is
+the same architecture, cadence and seeds with the flag off.
 
-### Run 2 — dose–response. Zero training.
+### Run 2 — the scripted control. Zero training, runs in parallel.
 
-`repair_amplitude_m` is continuous: **0** (off) → 50 → 100 → **200** (shipped).
-Score capability and exploitability at each. 🔍 If both rise monotonically with
-the amplitude of the loop, RQ1 stops being one controlled pair and becomes a
-**curve** — the strongest evidence available for a mechanism claim.
+`B0Config.repair_score` already takes **`"clearance"`** — the same idea on the
+scripted side, and a one-word config change. ⚠️ **It is a control, not the
+deliverable**: if it works, the frontier-breaking policy would be a B0 variant,
+and improving the heuristic is not what this thesis is for. Run it because it
+prices the mechanism cheaply and because it makes run 1 interpretable either way.
 
-### Run 3 — build the redundancy metric. Half a day, then zero training.
+### Run 3 — dose–response. Zero training, runs in parallel.
+
+`repair_amplitude_m`: **0** → 50 → 100 → **200**. If capability and exploitability
+both rise monotonically with the loop's amplitude, RQ1 stops being one controlled
+pair and becomes a **curve**.
+
+### Run 4 — the redundancy metric. Half a day, then zero training.
 
 *"Does a second threshold-clearing path exist that is edge-disjoint from the
 chosen one?"* — computable from the capacity matrix `routing.py` already builds.
-⛔ Nothing measures this today, and it is RQ3's candidate mechanism: score the
-J1-trained and co-trained policies and see whether co-training bought redundancy.
-
-### Run 4 — the learned analogue. **Training.**
-
-📏 `obs["flat"]` carries `noise_dbm` and `e2e_capacity` — the jammed quantities.
-**Mask them and the policy cannot close a loop on what the adversary attacks.**
-That is the learned counterpart of run 1: same capability question, same
-exploitability question, on the learned side.
-🔒 Needs an `EnvConfig` observation-mask flag and a gate declared before the run.
+⛔ Nothing measures this today, and it is RQ3's candidate mechanism.
 
 ### Then, in order
 

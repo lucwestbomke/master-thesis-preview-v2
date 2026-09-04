@@ -134,6 +134,7 @@ def make_env(a, seed: int, num_drones: int) -> BatchedSwarmEnv:
             jammer=a.jammer,
             eval_routes=not a.train_routes,
             obs_history=a.obs_history,
+            mask_jammed_obs=a.mask_jammed_obs,
             auto_reset=False,  # one episode per environment: clean metric rows
             stage_weights=weights,
             compile_occlusion=a.device != "cpu",
@@ -166,6 +167,17 @@ def load_actor(path: Path, env: BatchedSwarmEnv) -> tuple[SwarmActor, dict]:
         raise SystemExit(
             f"checkpoint wants obs_history={blob.get('obs_history', 1)} but the env has "
             f"{env.cfg.obs_history}; scoring it would feed the actor the wrong input width"
+        )
+    if blob.get("mask_jammed_obs", False) != env.cfg.mask_jammed_obs:
+        # ⛔ Silent otherwise: the shapes match, so the actor runs happily on an
+        # input distribution it never saw. A policy trained without the jammed
+        # features would be handed them at eval, and one trained with the mask
+        # would be scored on nine columns of noise it learned to ignore.
+        raise SystemExit(
+            f"checkpoint was trained with mask_jammed_obs="
+            f"{blob.get('mask_jammed_obs', False)} but the env has "
+            f"{env.cfg.mask_jammed_obs}; the shapes match so this would score "
+            f"silently on the wrong input distribution. Pass --mask-jammed-obs to match."
         )
     actor.load_state_dict(blob["policy"])
     actor.eval()
@@ -253,6 +265,12 @@ def main() -> None:
     )
     ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--stage", type=int, default=4, help="curriculum stage to evaluate at")
+    ap.add_argument(
+        "--mask-jammed-obs",
+        action="store_true",
+        help="⛔ Must match how the policy was TRAINED. A masked policy scored on "
+        "unmasked observations is a different network on a different input",
+    )
     ap.add_argument(
         "--obs-history",
         type=int,

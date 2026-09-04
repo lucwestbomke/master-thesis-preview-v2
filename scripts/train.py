@@ -109,6 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--timesteps", type=int, default=12_000_000)
     ap.add_argument("--num-drones", type=int, default=5)
     ap.add_argument(
+        "--mask-jammed-obs",
+        action="store_true",
+        help="zero the 9 observation features the jammer can move (noise_dbm, "
+        "e2e_capacity, per-edge capacity), leaving geometry and the sensor. "
+        "📏 PLAN.md §7: the learned analogue of B0Config.repair_score='clearance' "
+        "-- a policy that can still adapt, but not on what it is attacked through",
+    )
+    ap.add_argument(
         "--obs-history",
         type=int,
         default=1,
@@ -273,6 +281,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
             num_envs=num_envs,
             num_drones=a.num_drones,
             obs_history=a.obs_history,
+            mask_jammed_obs=a.mask_jammed_obs,
             device=str(a.device),
             seed=seed,
             fidelity=a.fidelity,
@@ -364,6 +373,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "value_clip": a.value_clip,
         "init_from": init_from,
         "obs_history": a.obs_history,
+        "mask_jammed_obs": a.mask_jammed_obs,
         "actor_params": parameter_count(actor),
         "critic_params": parameter_count(critic),
         "weights": dataclasses.asdict(weights),

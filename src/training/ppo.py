@@ -642,6 +642,7 @@ class PPOTrainer:
                 # builds an actor of the wrong input width and either crashes or
                 # -- worse -- silently scores a different network.
                 "obs_history": getattr(self.actor, "obs_history", 1),
+                "mask_jammed_obs": bool(getattr(self.env.cfg, "mask_jammed_obs", False)),
                 "min_log_std": self.actor.min_log_std,
                 "timestep": self.timestep,
                 **(extra or {}),

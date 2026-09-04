@@ -175,6 +175,43 @@ LINK_TIMEOUT_SCALE = 50.0
 SOFT_SEE_TAU_M = 15.0  # matches RewardWeights.tau_clearance_m
 
 
+#: Indices into the 24-dim ego block that the JAMMER can move. `PLAN.md` §1: a
+#: policy that closes a feedback loop on the quantity an adversary attacks hands
+#: that adversary a control input, and these are the only ego features it reaches.
+#:
+#: * **18** `noise_dbm` -- literally `aux["jam_mw"] + noise`, the emitter's own power.
+#: * **22** `e2e_capacity` -- SINR-derived, so the beam moves it directly.
+#:
+#: 🔒 Everything else in the ego block is geometry, kinematics or the sensor:
+#: `clr_hvt` (19) and `clr_mcv` (20) come from building occlusion, which the
+#: emitter cannot touch. That split is the whole point -- masking these leaves a
+#: policy that can still adapt on GEOMETRY, which is exactly what
+#: `B0Config.repair_score = "clearance"` does on the scripted side.
+#:
+#: ⚠️ **Not masked, and deliberately**: `on_path` (21) and `steps_since_link` (23)
+#: are routing-derived and therefore reachable *indirectly*. B0's clearance-repair
+#: also reads `nb_onpath`, so removing them would make the learned arm strictly
+#: more deprived than the scripted analogue it is being compared against.
+JAMMED_EGO_IDX: tuple[int, ...] = (18, 22)
+
+#: Index within each 2-dim edge feature that the jammer can move: `edge` is
+#: `[capacity, clearance]`, so **0** is SINR-derived and **1** is geometry.
+JAMMED_EDGE_IDX: tuple[int, ...] = (0,)
+
+
+def jammed_flat_indices() -> tuple[int, ...]:
+    """Positions in the packed `(.., FLAT_DIM)` vector the emitter can move.
+
+    🔒 Derived from the same layout `unpack_flat` inverts, never hardcoded, so a
+    change to `EGO_DIM` / `NEIGHBOUR_DIM` / `EDGE_DIM` cannot silently point this
+    at the wrong features. `test_obs_mask.py` checks it against `unpack_flat`.
+    """
+    k = N_MAX - 1
+    edge_base = EGO_DIM + k * NEIGHBOUR_DIM
+    edges = tuple(edge_base + slot * EDGE_DIM + i for slot in range(k) for i in JAMMED_EDGE_IDX)
+    return tuple(JAMMED_EGO_IDX) + edges
+
+
 def unpack_flat(flat: Tensor) -> dict[str, Tensor]:
     """Inverse of `BatchedSwarmEnv._pack`. `(B, N, 108)` -> the structured views.
 
@@ -433,6 +470,18 @@ class EnvConfig:
     #: frame can form the same difference; one that sees only the current frame
     #: cannot. ⛔ Not the target memory `results/memory_horizon.md` closed -- that
     #: needed a 320-step horizon and was worth ~0.
+    #: Zero every observation feature the JAMMER can move, leaving geometry,
+    #: kinematics and the sensor intact. `PLAN.md` §7 run 1: the learned analogue
+    #: of `B0Config.repair_score = "clearance"` -- a policy that can still adapt,
+    #: but not on the quantity it is being attacked through.
+    #:
+    #: 🔒 Masks by ZEROING, not by removing: `FLAT_DIM` is unchanged, so actors,
+    #: checkpoints and the rollout buffer are all shape-compatible and the only
+    #: thing that differs is the information content. A zeroed feature is a
+    #: constant and therefore carries nothing.
+    #: ⛔ Off by default; every existing number was measured with it off.
+    mask_jammed_obs: bool = False
+
     obs_history: int = 1
 
     training_extras: bool = False
@@ -523,6 +572,10 @@ class BatchedSwarmEnv:
         self._flat_hist = torch.zeros(
             cfg.num_envs, cfg.num_drones, max(cfg.obs_history, 1), FLAT_DIM, device=dev
         )
+
+        # Hoisted: building this inside `_observe` would copy host memory every
+        # tick, which is the device rule in AGENTS.md.
+        self._jammed_idx = torch.tensor(jammed_flat_indices(), dtype=torch.long, device=dev)
 
         art = np.load(artefact)
         self.boxes = torch.from_numpy(art["building_boxes"]).float().to(dev)
@@ -1312,6 +1365,12 @@ class BatchedSwarmEnv:
         )
 
         flat = self._pack(ego, neighbour, edge)
+        if cfg.mask_jammed_obs:
+            # ⚠️ Applied to `flat` itself, so `flat_history`, the critic-side
+            # bookkeeping and every consumer see the same masked view. Masking
+            # downstream of the history buffer would leave the previous frames
+            # unmasked and hand the policy the loop back through time.
+            flat = flat.index_fill(-1, self._jammed_idx, 0.0)
         out = {
             "ego": ego,
             "neighbour": neighbour,
