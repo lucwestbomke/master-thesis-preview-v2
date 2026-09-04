@@ -12,11 +12,14 @@ happens next.**
 
 ## 1. The claim
 
-> 🔍 **Exploitability decomposes into damage and a control loop.**
-> `gap = f(threshold proximity) + g(loop strength)`. A policy that closes a
-> feedback loop on the quantity an adversary attacks hands that adversary a
-> control input — **on top of** the damage its operating point already exposes it
-> to. ⛔ The loop is not the only term, and for a policy sitting on the capability
+> 🔍 **Exploitability decomposes into damage and a control loop:**
+> `gap = f(threshold proximity) + g(loop AMPLITUDE)`.
+>
+> An adversary exploits a policy by **leading it out of position**. The cost scales
+> with how far the policy is willing to be led — **not** with what its response is
+> computed from. Capability saturates in that amplitude long before the cost does.
+>
+> ⛔ The loop is not the only term, and for a policy sitting on the capability
 > threshold it is not the dominant one.
 
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
@@ -52,6 +55,18 @@ against an adversary. Full record: [`results/frontier.md`](results/frontier.md).
 ⚠️ **The loop is worth its cost.** At J3B, B0 still scores **43.8 %** against
 geodesic's **39.7 %**. Adaptivity is a good trade; the point is that the cost is
 real, measurable, and *separable* from what it buys.
+
+📏 **Two factors, varied separately** ([`results/repair_gates.md`](results/repair_gates.md)):
+
+| what was varied | result |
+|---|---|
+| the loop's **target** — clearance (jammer-proof) vs capacity | ⛔ **no effect**: 13.37 vs 13.24, overlapping. The router picks which edges the loop scores, and the jammer sets the router — so the adversary drives the loop *whatever* it looks at |
+| the loop's **amplitude** — 0 / 50 / 100 / 200 m | ✅ **dose–response**, 7.94 → 13.24 pp, disjoint endpoints |
+
+⭐ 📏 And it is **mis-set**: at J3B, `repair_amplitude_m = 100` scores **47.3 %**
+against the shipped 200's **43.8 %** — **5/5 paired seeds**, for 0.46 pp of J1
+capability. The last doubling buys +0.4 pp of capability and costs +3.7 pp of
+exploitability. **B0's adaptation gain is tuned for an unjammed world.**
 
 🔒 **And the pair is a conservative test of it.** B0 has *more* capacity headroom
 than geodesic (+6.6 Mbps over the bar against +3.3), so its damage term `f` is
@@ -223,7 +238,7 @@ not exploitable.
 🔒 Declare the rule in `results/obs_mask_gate.md` **before** running. Control is
 the same architecture, cadence and seeds with the flag off.
 
-### Run 2 — the scripted control. Zero training, runs in parallel.
+### ~~Run 2~~ — ⛔ **DONE 2026-09-04. The target does not matter.** [`repair_gates.md`](results/repair_gates.md)
 
 `B0Config.repair_score` already takes **`"clearance"`** — the same idea on the
 scripted side, and a one-word config change. ⚠️ **It is a control, not the
@@ -231,7 +246,7 @@ deliverable**: if it works, the frontier-breaking policy would be a B0 variant,
 and improving the heuristic is not what this thesis is for. Run it because it
 prices the mechanism cheaply and because it makes run 1 interpretable either way.
 
-### Run 3 — dose–response. Zero training, runs in parallel.
+### ~~Run 3~~ — ✅ **DONE 2026-09-04. Dose–response confirmed, and the shipped amplitude is 2x too large.** [`repair_gates.md`](results/repair_gates.md)
 
 `repair_amplitude_m`: **0** → 50 → 100 → **200**. If capability and exploitability
 both rise monotonically with the loop's amplitude, RQ1 stops being one controlled
