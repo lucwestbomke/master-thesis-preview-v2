@@ -553,11 +553,12 @@ March 2027. The official window is for **writing**, which is how it ends up good
 | when | what | why then |
 |---|---|---|
 | ~~run 1~~ | ✅ **DONE 2026-09-02.** J-ladder at 5 seeds x 128 episodes on CUDA, B0 + `gnn/deep`. The ordering **reversed**: monotone, J3B strongest. [`results/j_ladder.md`](results/j_ladder.md), [`j_ladder.jsonl`](results/j_ladder.jsonl) | It gated everything downstream, and it caught a false headline drawn from one CPU seed |
-| **Sep–Oct 2026** | **RQ4 end-to-end.** ONNX export, TensorRT, latency / p99 jitter / power on the Orin Nano | ⚠️ Deliberately first: PyTorch Geometric exports badly, and finding that out in month one is worth more than in month ten. It also depends on nothing else |
-| *in parallel, 1 week* | The BC-init probe (§3) | Cheap, timeboxed, upside only. ⛔ One week |
+| **Sep–Oct 2026** | **RQ4 end-to-end.** ONNX export, TensorRT, latency / p99 jitter / power on the Orin Nano | ⚠️ Deliberately first: PyTorch Geometric exports badly, and finding that out in month one is worth more than in month ten. It also depends on nothing else. 🔧 **Deferred by choice on 2026-09-04**; the hardware is in hand and the export risk stays unretired until it runs |
+| ~~in parallel, 1 week~~ | ✅ **DONE 2026-09-02.** The BC-init probe ran and **does not clone B0** — 9.4 % against 58.0 %, because B0 is stateful and BC compounds error. ⛔ No gate was declared: a probe that cannot reach the basin would have measured its own failure | Cheap, timeboxed, and it closed rather than lingering |
 | *in parallel* | `docs/REDUCTION.md` tasks 2–4, then 6 | Housekeeping that pays for the adversary |
 | **Nov 2026 – Jan 2027** | **J4**: opponent pool, alternating best response | The hard, risky part. The buffer lives here |
-| **Feb 2027** | **The full policy × adversary cross-product, 5 seeds** → Gate B | 📏 A 10 M-step run costs 2.2 min. This month is compute-free by measurement |
+| ~~Feb 2027~~ | ✅ **DONE 2026-09-03, five months early.** The policy × adversary cross-product at 5 seeds → **Gate B CONFIRMED**. [`results/gate_b.md`](results/gate_b.md) | 📏 A 10 M-step run costs 2.2 min, so the schedule was never the binding constraint here |
+| **⚠️ owed** | **The `capable_no_division` control for Gate B's chain-length confound.** Declared in [`results/gate_b.md`](results/gate_b.md); re-scores existing checkpoints, no retraining | 📏 The exploitability gap tracks hop count perfectly across all four policies, and a per-hop normalisation reverses the headline. Minutes of compute; it must not go into a write-up unanswered |
 | **Mar – Jul 2027** | Gate C quantisation sweep. 🔒 **Freeze**, recorded with a date and scope. `docs/REDUCTION.md` task 7. Writing and submission | The official window |
 
 🔒 **Close the TR 36.777 NLoS intercept before the freeze.** One human reading of

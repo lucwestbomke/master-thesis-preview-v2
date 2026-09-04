@@ -133,3 +133,97 @@ to hold for DeepSets or MLP.
 
 ⛔ **Two rungs of adversarial training.** "Committed adversaries are better
 teachers" rests on J2 vs J3B alone.
+
+---
+
+# ☠️ A confound found 2026-09-04, after the verdict, and NOT resolved here
+
+The gate confirmed. The rule was declared 2026-08-27 and not edited, and it is
+met on every reading it asks for. 🔒 **That verdict stands as declared.** What
+follows does not overturn it — it names a competing explanation the gate did not
+control for, so that it is answered *before* the result is written up rather than
+by a reviewer afterwards.
+
+## 📏 The exploitability gap tracks CHAIN LENGTH, perfectly
+
+| policy | hops @ J1 | gap | gap / hop | capacity lost |
+|---|---|---|---|---|
+| **B0** | **2.13** | **13.24 pp** | 6.23 | −5.21 Mbps |
+| gnn, trained at J1 | 1.20 | 11.12 pp | **9.30** | −3.23 |
+| gnn, co-trained at J2 | 1.11 | 7.51 pp | 6.78 | −2.68 |
+| gnn, co-trained at J3B | 1.09 | 7.29 pp | 6.72 | −3.11 |
+
+**The rank order of hop count and the rank order of the gap are identical across
+all four policies.**
+
+🔍 **And there is a mechanism, not just a correlation.** `routing.py` computes
+`C_e2e = min_i(C_i) / min(n, 3)`. A longer chain is more fragile to jamming for
+*two* separable reasons: it has **more links for the beam to find**, and it pays
+a **larger rate-division penalty**. Neither has anything to do with scripted
+versus learned.
+
+⛔ **So there is a competing explanation for Gate B:** *B0 is more exploitable
+because it builds a 2.1-hop relay chain, and the learned policies are less
+exploitable because they build a 1.2-hop chain.* And the learned chain is short
+because the swarm **never learned to relay** — `docs/inherited/BLOCK_G.md`:
+*"conditioned on observing, every learned policy's chain is indistinguishable
+from a random policy's."* On that reading the "robustness" is a consequence of
+incompetence: **there is less chain to attack.**
+
+## ⚠️ A third normalisation, and it REVERSES the headline
+
+`gap / hop` is 6.23 for B0 and 9.30 for the J1-trained GNN. Per unit of chain,
+**B0 is the least exploitable policy in the table and the learned control is the
+most.**
+
+🔒 **This is not adopted, and must not be.** Amendment 2 already had to resolve an
+absolute-versus-relative disagreement, and it did so by requiring both to agree —
+*written after seeing them disagree, and said so*. Adopting a third normalisation
+now, chosen after seeing that it flips the result, is exactly the post-hoc
+rule-invention `PLAN.md` opens by forbidding. It is recorded as a **threat to
+validity**, not as a verdict.
+
+## 🔍 What survives the confound, and it is the more interesting half
+
+📏 **The co-training effect is NOT explained by chain length.**
+`rq2-gnn-deep` (1.20 hops) → `advtrain-J2` (1.11 hops) is a **7.5 % change in
+hop count** and a **32 % change in the gap** (11.12 → 7.51 pp). Proportionality
+would predict ~0.8 pp; the measured move is **3.6 pp**, about 4× larger.
+
+✅ So **RQ3 stands on its own**: same architecture, same cadence, near-identical
+chain length, and co-training still cuts the exploitability gap by a third. It is
+the **B0-versus-learned** comparison — 2.13 hops against 1.1 — that is confounded,
+and that comparison is RQ1's.
+
+## 🔒 The control, declared now, before it is run
+
+`evaluate.py` already computes **`capable_no_division`** — mission-capable
+re-scored at `reuse_limit = 1`, i.e. with the `min(C_i)/min(n, 3)` penalty
+removed. It was not in `eval_policy.py`'s per-seed output; it is now.
+
+| | rule |
+|---|---|
+| **the confound is real** | B0's gap measured on `capable_no_division` **falls toward the learned policies'**. The gap was then mostly the division penalty, RQ1's headline is a chain-length artefact, and it must be reported as one |
+| **the confound is not the explanation** | B0's gap on `capable_no_division` stays **well above** the learned policies'. More links to jam is then not sufficient either, and the finding survives with the control reported beside it |
+| **partial** | the gap shrinks but the ordering holds. Report both columns and attribute the split |
+
+⚠️ `capable_no_division` removes the *division* half only. The *more links to jam*
+half needs a hop-matched comparison, which no policy in this project currently
+supplies — ⛔ **that one is genuinely open**, and it is the honest limitation to
+state in the write-up.
+
+📏 Cost: re-scoring the existing checkpoints, minutes. No retraining.
+
+```bash
+for T in rq2-gnn-deep advtrain-J2 advtrain-J3B; do
+  for J in J1 J3B; do
+    uv run python scripts/eval_policy.py runs/$T-s*/checkpoint.pt --group "$T" \
+        --jammer $J --device cuda:0 --seeds 5 --num-envs 128 \
+        --out results/gate_b_nodivision.jsonl
+  done
+done
+for J in J1 J3B; do
+  uv run python scripts/eval_policy.py --policy b0 --jammer $J --device cuda:0 \
+      --seeds 5 --num-envs 128 --out results/gate_b_nodivision.jsonl
+done
+```

@@ -54,6 +54,7 @@ _AS_PERCENT = frozenset(
         "observed",
         "link_alive",
         "chain_occluded",
+        "capable_no_division",
         "capable_last_third",
         "observed_last_third",
         "capable_share_high",
@@ -74,6 +75,12 @@ REPORT = (
     "chain_occluded",
     "capacity_mean",
     "capacity_p5",
+    # ⚠️ The CONTROL for the chain-length confound in results/gate_b.md.
+    # `capable_no_division` re-scores at `reuse_limit = 1`, i.e. with the
+    # `min(C_i)/min(n, 3)` rate-division penalty removed. A longer chain is more
+    # exploitable for two separable reasons -- more links to jam, and a bigger
+    # division penalty -- and this column is what separates them.
+    "capable_no_division",
     "episode_return",
     "hop_mean",
     # RQ3's own metrics, reported here because they turned out to be the

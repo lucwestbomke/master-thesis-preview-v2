@@ -60,6 +60,11 @@ against it → running on the hardware that has to fly it. Full text in
    policies — disjoint ranges, worst seed, both normalisations.
    🔍 The claim is about the **derivative**: B0 is more capable *and* more
    exploitable. ⛔ It still wins by 11.9 pp at J3B.
+   ☠️ **Carries an unresolved confound**: the gap tracks **chain length**
+   perfectly across all four policies (B0 2.13 hops, learned 1.1–1.2), and
+   `min(C_i)/min(n, 3)` gives a longer chain both more links to jam and a bigger
+   division penalty. A per-hop normalisation **reverses** the headline. The
+   control (`capable_no_division`) is declared and **not yet run**.
    [`results/gate_b.md`](results/gate_b.md).
 2. **RQ2 — where does an adversary's power actually come from?**
    📏 5 seeds x 128 episodes, CUDA: **directionality −10.6 pp, adaptivity
