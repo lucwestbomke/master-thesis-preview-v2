@@ -31,6 +31,7 @@ CPU. Never compare a number from one device with a number from another.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -39,7 +40,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.baselines.b0 import B0Policy
+from src.baselines.b0 import B0Config, B0Policy
 from src.baselines.evaluate import RolloutMetrics, rollout
 from src.env.core import STAGES, BatchedSwarmEnv, EnvConfig
 from src.models import SwarmActor
@@ -113,6 +114,34 @@ REPORT = (
     # stay cheap rather than holding a useful position.
     "battery_end",
 )
+
+
+def b0_config(overrides: list[str]) -> B0Config:
+    """Apply `FIELD=VALUE` overrides to `B0Config`, typed off the dataclass.
+
+    ⛔ An unknown field raises. Silently ignoring one would score the shipped B0
+    under a name claiming otherwise, which is worse than crashing -- the row would
+    look like an ablation arm and be the control.
+    """
+    if not overrides:
+        return B0Config()
+    fields = {f.name: f.type for f in dataclasses.fields(B0Config)}
+    kw: dict[str, object] = {}
+    for item in overrides:
+        key, _, raw = item.partition("=")
+        key = key.strip()
+        if key not in fields:
+            raise SystemExit(
+                f"unknown B0Config field {key!r}; known: {', '.join(sorted(fields))}"
+            )
+        current = getattr(B0Config(), key)
+        kw[key] = raw if isinstance(current, str) else type(current)(raw)
+    return dataclasses.replace(B0Config(), **kw)
+
+
+def b0_label(name: str, overrides: list[str]) -> str:
+    """🔒 An overridden B0 never shares a row name with the shipped one."""
+    return name if not overrides else name + "+" + "+".join(sorted(overrides))
 
 
 def med_iqr(values: list[float]) -> tuple[float, float]:
@@ -199,10 +228,15 @@ def score(a, name: str, checkpoint: Path | None, num_drones: int) -> dict[str, l
             def policy(_obs, _b=b, _n=n, _gen=gen, _env=env):
                 return torch.empty(_b, _n, 3, device=_env.device).uniform_(-1, 1, generator=_gen)
 
-        elif name in ("b0", "b0-geodesic"):
-            variant = "geodesic" if name == "b0-geodesic" else "b0"
+        elif name.split("+")[0] in ("b0", "b0-geodesic"):
+            variant = "geodesic" if name.split("+")[0] == "b0-geodesic" else "b0"
             pol = B0Policy(
-                b, n, variant=variant, device=env.device, action_space=env.cfg.action_space
+                b,
+                n,
+                variant=variant,
+                device=env.device,
+                cfg=b0_config(a.b0_config),
+                action_space=env.cfg.action_space,
             )
             on_reset = pol.reset
 
@@ -266,6 +300,18 @@ def main() -> None:
     ap.add_argument("--action-space", default="acceleration", choices=["acceleration", "velocity"])
     ap.add_argument("--stage", type=int, default=4, help="curriculum stage to evaluate at")
     ap.add_argument(
+        "--b0-config",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
+        help="override one B0Config field, repeatable. 📏 PLAN.md §7 runs 2-3: "
+        "`repair_score=clearance` points the repair hill climb at a quantity the "
+        "jammer CANNOT move (clearance is building occlusion; the emitter enters "
+        "only at denom_mw in SINR), and `repair_amplitude_m=0/50/100/200` is the "
+        "dose-response on the loop's size. 🔒 The shipped B0 is untouched -- an "
+        "override renames the row so it can never be quoted as the baseline",
+    )
+    ap.add_argument(
         "--mask-jammed-obs",
         action="store_true",
         help="⛔ Must match how the policy was TRAINED. A masked policy scored on "
@@ -321,7 +367,9 @@ def main() -> None:
     print(header)
     print("-" * len(header))
 
-    jobs: list[tuple[str, Path | None]] = [(p, None) for p in a.policy]
+    # 🔒 An overridden B0 is renamed here, at the one place the row label is set,
+    # so no downstream consumer can mistake an ablation arm for the baseline.
+    jobs: list[tuple[str, Path | None]] = [(b0_label(p, a.b0_config), None) for p in a.policy]
     if a.group:
         jobs.append((a.group, None))  # handled below, from a.checkpoints
     else:
