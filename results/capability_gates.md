@@ -183,9 +183,70 @@ between-drone spread is irreducible error by construction. `ppo.py` says so and
 `return_spread_between_drones` measures it. ⚠️ `grad_kept` has never been read in this project; its first five-seed
 value is a result on its own regardless of the branch.
 
-### Result
+### Result — ⚠️ **PARTIAL, 2026-09-04. Arm 1 is clean; arm 2 collapsed.**
 
-⛔ **Not yet run.**
+#### 📏 Arm 1 — λ against the shipped budget. Valid, and it refutes the λ argument.
+
+Train split, 3 seeds, ranked on the worst seed. [`gateD_shipped.jsonl`](gateD_shipped.jsonl).
+
+| λ | worst | median | per seed |
+|---|---|---|---|
+| **0.95** (shipped) | **44.28 %** | 45.18 % | 44.3 · 48.5 · 45.2 |
+| 0.98 | 41.17 % | 43.82 % | 45.0 · 41.2 · 43.8 |
+| 0.99 | 41.39 % | 42.50 % | 41.4 · 44.2 · 42.5 |
+| 0.995 | 36.13 % | 39.94 % | 39.9 · 36.1 · 41.8 |
+
+⛔ **Raising λ does not help, and 0.995 clearly hurts.** ⚠️ The honest statement is
+*"λ is a null between 0.95 and 0.99, and harmful at 0.995"* — 0.95's range
+[44.3, 48.5] overlaps 0.98's [41.2, 45.0] and 0.99's [41.4, 44.2]. Only 0.995
+separates on the worst seed.
+
+☠️ **The argument for raising it was mine and it was wrong.** The horizon
+arithmetic is right — at λ = 0.95 the advantage sees 18.9 steps against B0's
+294.7-step observer tenure — but the conclusion did not follow. Higher λ buys
+horizon by *reducing bias and raising variance*, and at ~5,900 gradient steps
+there is no budget to average that variance away. 🔍 The prediction that λ would
+pay **only under the larger budget** is exactly the interaction the 2 × 4 was
+built to test, and it is still open — arm 2 has to be repaired before it can
+answer.
+
+#### ☠️ Arm 2 — the budget bundle collapsed, and the arm is not interpretable
+
+| λ | worst | median |
+|---|---|---|
+| 0.95 | **13.08 %** | 13.10 % |
+| 0.98 | 9.22 % | 12.80 % |
+
+📏 Against **random's 10.7 %**. This is not a regression, it is a **collapse**:
+the policy is at or below chance. ⛔ Reading it through the REGRESSION branch
+(*"more optimisation makes it worse, which points at the objective"*) would be
+wrong, because the treatment is not a valid instantiation of *"more
+optimisation"* — it is five knobs at once, at least one of which is misbehaving.
+
+☠️ **And my validity precondition was ONE-SIDED, which is a defect in the
+declaration.** It voids the arm if `approx_kl` fails to reach 0.008, but says
+nothing about it running *away*. A diverged policy is exactly as uninformative as
+a frozen one. 🔒 Recorded as a defect rather than used as an escape hatch:
+`AGENTS.md` requires the rule to be declared before the run, and the fix is to
+state the two-sided precondition **now, before the repaired arm runs**, not to
+decide afterwards which reading is convenient.
+
+🔒 **Amended precondition, declared before the repaired arm:** the treatment is
+**VOID** unless median `approx_kl` over the run lies in **[0.005, 0.05]**. Below
+it the policy cannot move; above it PPO's trust region is not being respected and
+whatever is measured is not the condition named.
+
+⚠️ **Prime suspect, to be confirmed from the logs rather than assumed:** the
+`--target-kl` controller in `ppo.py::_adapt_learning_rate` raises the LR by 1.5x
+per round whenever the round's **mean** KL is under half the target — and the mean
+is taken over every minibatch of every epoch, including epoch 0 where the ratio is
+1 and the KL is ~0 **by construction**. That biases the controller upward, and
+`lr_max` is 1e-2, 33x the starting 3e-4. `scripts/inspect_run.py` reads
+`lr_actor` and `approx_kl` straight out of `log.jsonl`.
+
+⛔ **Not yet attributed.** Four other knobs moved at the same time, and
+`--grad-norm-clip-critic 1.0` alone gives the actor ~4x more gradient per step
+(📏 `grad_kept` 0.24 → ~0.9 measured on the smoke runs) on top of 10x more steps.
 
 ---
 
