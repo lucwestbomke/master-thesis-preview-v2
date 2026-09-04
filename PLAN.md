@@ -1,520 +1,153 @@
 # Contested Relay — the plan
 
-**Drafted 2026-08-27. Rewritten 2026-09-02** around a single claim, because the
-deliverable changed from an 80-page thesis to a paper and a paper carries one
-claim, not three independent contributions.
+**Rewritten 2026-09-04**, around the claim the frontier run produced. The two
+framings before this one are recorded in §6, because a claim that was refuted is
+part of the evidence for the one that replaced it.
 
-`docs/INHERITED.md` records *what is already known*. This file records *what
-happens next*, in order, with the decision rules declared **before** the runs that
-resolve them — because two claims in the predecessor project were overturned by
-reading a single run, and a rule invented after the fact is not a rule.
-
-> ⚠️ **Gates B and C below are reproduced verbatim from the 2026-08-27 draft.**
-> They were declared before their runs and are not edited here. Gate A has since
-> resolved; its verdict is recorded in §5 and in
-> [`results/gate_a.md`](results/gate_a.md).
+`docs/INHERITED.md` records *what is already known*. `results/` records *what has
+been measured, with the rule declared before each run*. **This file records what
+happens next.**
 
 ---
 
 ## 1. The claim
 
-> 🔍 **Exploitability, not capability, is the right axis on which to compare
-> learned and scripted multi-agent policies.**
+> 🔍 **Exploitability is a cost of *adaptivity*, not of capability.** A policy that
+> closes a feedback loop on the quantity an adversary attacks hands that adversary
+> a control input into its own behaviour.
 
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
-command vehicle over a multi-hop chain at >= 15 Mbps, while a jammer degrades
-links. 📏 **The scripted baseline B0 wins the static task by 15.0 pp** (55.7 %
-against the GNN's 40.7 %, eval split, 5 seeds), and — see §3 — that is now a
-**settled premise of this work rather than an open question.**
+command vehicle over a multi-hop chain at >= 15 Mbps, while a directional jammer
+degrades links. **Exploitability** is how much `mission_capable` a policy loses
+between the isotropic emitter (J1) and the strongest adversary built (J3B).
 
-So the protagonist of this paper is *the strongest available policy*, and it
-happens to be scripted. The question asked of it is not how capable it is but
-**how much of that capability an adversary can take away**, and whether a policy
-that learned its behaviour is exploitable in the same way and to the same degree.
+### 📏 The evidence, in one table
 
-⛔ **Stop asking whether learned control beats the heuristic on the static task.**
-It does not, the reason is measured, and §3 closes the axis.
+`b0-geodesic` and `B0` are the **same scripted family** — same code path, same
+stations, same chain length — differing by ranked roles, a belief filter, and
+`_update_repair`, which is *"a 1-D hill climb on observable clearance"*.
 
----
+| | capability (J1) | hops | **exploitability** | range |
+|---|---|---|---|---|
+| `b0-geodesic` | 45.6 % | 2.00 | **6.39 pp** | [5.68 – 6.54] |
+| `B0` | 57.3 % | 2.13 | **13.24 pp** | [11.42 – 13.58] |
 
-## 2. The four objectives
+✅ **Disjoint.** 📏 [`b0_ablation.md`](results/b0_ablation.md) prices link repair
+at **+6.90 pp** of capability; the exploitability difference is **6.85 pp**.
+**The loop buys ~6.9 pp and costs ~6.9 pp, one for one.**
 
-One arc: **an adversary that adapts → a policy co-trained against it → running on
-the hardware that has to fly it.**
+🔍 **The mechanism is a named subroutine.** The beam degrades a link → repair
+hill-climbs to recover it → J3B re-optimises against the new geometry → repair
+chases. `b0-geodesic` returns from `_update_repair` immediately and has half the
+gap; `random` adapts to nothing and has the smallest gap of all (2.05 pp).
 
-### RQ1 — Does the heuristic's advantage survive an adversary that adapts to it?
+⛔ **This is not a scripted-versus-learned claim.** 📏 Both extremes of the range
+are *scripted* and every learned policy sits between them. The variable is whether
+the policy closes a loop on the jammed quantity, and whether that loop was trained
+against an adversary. Full record: [`results/frontier.md`](results/frontier.md).
 
-✅ **ANSWERED 2026-09-03: no. Gate B confirms.**
-[`results/gate_b.md`](results/gate_b.md).
-
-📏 The **exploitability gap**, J1 → J3B, 5 seeds × 128 episodes, CUDA, eval split:
-
-| policy | gap | worst | relative |
-|---|---|---|---|
-| **B0** | **13.24 pp** | 11.42 | **23.1 %** |
-| gnn/deep, trained at J1 | 11.12 pp | 10.11 | 27.9 % |
-| **gnn/deep, trained at J2** | **7.51 pp** | 7.12 | **18.7 %** |
-| **gnn/deep, trained at J3B** | **7.29 pp** | 6.50 | **18.6 %** |
-
-✅ B0's gap exceeds both adversarially-trained policies' on the median, on the
-**worst seed**, on the relative normalisation, and with **disjoint ranges**.
-🔒 Amendment 2 required the two normalisations to *agree*, and they do.
-
-🔍 **The claim is about the derivative, not the level.** B0 is more capable *and
-more exploitable*; the adversarially-trained policy is less capable and more
-robust. ⛔ B0 still wins by **11.9 pp** at J3B, and that is not the claim.
-
-### RQ2 — Where does an adversary's power actually come from?
-
-📏 **Measured 2026-09-02 at 5 seeds x 128 episodes on CUDA**
-([`results/j_ladder.md`](results/j_ladder.md)). The decomposition, on B0:
-
-| transition | what it adds | cost to B0 |
-|---|---|---|
-| J1 → J2 | **directionality** | **−10.6 pp** |
-| J2 → J3B | **adaptivity** | **−2.9 pp** |
-
-🔍 **Directionality is worth 3.7x what adaptivity is worth.** That is the finding:
-an adversary's power in this task is overwhelmingly about *where the energy
-goes*, not about *re-deciding where it goes*. ⛔ It is also exactly why the J2
-control was declared non-optional — without it, J3B's total would have credited a
-**beam's** 10.6 pp to **adaptation**.
-
-🔒 **RQ2 is the insurance.** It stands whether or not J4 trains, it is a measured
-decomposition rather than a bet, and it is a more useful caution for anyone
-building an adversarial evaluation than the claim it replaces.
-
-### ☠️ What it replaces, and why that matters
-
-⛔ **This RQ previously asked whether the ladder was non-monotone, and asserted
-that it was.** That rested on a smoke measurement — **one seed, 32 episodes,
-CPU** — and the 5-seed CUDA re-run **reverses the ordering outright**:
-
-| rung | smoke | **proper** |
-|---|---|---|
-| J2 beam on MCV | **41.8 %** ← smoke's strongest | 46.7 % |
-| J3 greedy | 44.5 % | 45.2 % |
-| J3B best response | 42.2 % | **43.8 %** ← **strongest** |
-
-The ladder is **monotone**: J3B > J3 > J2 > J1 > J0, and the paired comparison is
-clean — B0 is deterministic, so the same seed draws the same episodes at every
-rung, and **J3B beats J2 on 5/5 seeds**. *"Adaptivity does not help this
-adversary. At all."* is withdrawn.
-
-✅ **The declare-before-you-run rule is what caught this.**
-[`results/j_ladder.md`](results/j_ladder.md) labelled its own result a smoke
-measurement and declared the re-run as blocking on everything downstream. A false
-headline was stopped before it reached a paper. ⛔ Do not quote a single-seed
-CPU number as an ordering again.
-
-### RQ3 — Does adversarial co-training produce robustness, or overfitting to the training opponent?
-
-J4: a **learned** jammer, trained by alternating best response against an
-**opponent pool**. Then the full policy × adversary cross-product.
-
-✅ **ANSWERED 2026-09-03 for the SCRIPTED rungs: robustness, not overfitting.**
-📏 The cross-product, `mission_capable` median (rows = trained at, cols =
-evaluated at):
-
-| trained at ↓ / eval at → | J1 | J2 | J3B |
-|---|---|---|---|
-| J1 (control) | 39.9 % | 30.0 % | 28.7 % |
-| **J2** | **40.2 %** | **34.3 %** | **31.8 %** |
-| J3B | 39.3 % | 33.1 % | 30.9 % |
-
-🔒 **The off-diagonal is the result, not the diagonal**, and it is emphatic:
-at J3B — an adversary it never trained against — `advtrain-J2` scores **31.8 %,
-beating `advtrain-J3B`'s 30.9 % on its own training opponent**. The diagonal is
-not the best cell anywhere. ✅ And adversarial training is **free on the clean
-rung**: +0.3 pp at J1, no robustness/performance trade-off.
-
-🔍 **Secondary, and it rhymes with RQ2:** training against the *committed* J2
-generalises better than against the *re-optimising* J3B. The same property that
-makes an adversary damaging makes it a better teacher. 🔧 One measurement, two
-rungs — a hypothesis, not a result.
-
-⚠️ **J4 is still owed.** The strongest adversary reached is *scripted*; a learned
-jammer could find a response the scripted rungs do not.
-
-📏 **RQ3 is where the thesis is actually bet, and the J-ladder is why.**
-B0 − GNN is **17.4 pp at J1 and 15.0 pp at J3B**: the strongest adversary that
-exists narrows B0's lead by **2.4 pp**, and linear extrapolation says closing the
-rest would need ~**6x** more adversarial pressure than the entire ladder supplies.
-⛔ So *adversarial evaluation alone does not close the gap*, and no stronger
-scripted rung is going to.
-
-🔍 **But that GNN never saw J2 or J3B while training.** Every degradation number
-in [`results/j_ladder.md`](results/j_ladder.md) is a policy meeting an adversary
-for the first time at test. Whether a policy **co-trained** against an opponent
-pool degrades less is the one lever nothing has touched, and it is the only
-remaining mechanism by which learning could earn its keep here.
-
-⚠️ **J4 was called "the stretch" and "explicitly not load-bearing" on
-2026-08-27.** That is no longer true, and the reason has changed twice — first
-because J3B looked weaker than a fixed beam (wrong, from one CPU seed), and now
-because the scripted ladder is monotone but *too small* to close 15 pp. The
-second reason is the measured one. 🔒 If J4 does not train, RQ1, RQ2 and RQ4 still
-stand and the paper reports that co-training was not reached.
-
-### RQ4 — Does the robustness survive the airframe?
-
-ONNX → TensorRT on a Jetson Orin Nano 8 GB. Latency, **p99 jitter** and power at
-`N` = 3/5/8 in FP32, FP16 and INT8, against the 400 ms control period. The
-research question inside it: **does quantisation degrade coordination more than it
-degrades control?** Push the INT8 policy through the same harness and compare
-`role_entropy` and `observer_range_m` against `mission_capable`. Resolved by
-**Gate C** (§5), unchanged from its declaration.
-
-🔧 **Pure Python.** TensorRT's Python bindings, `trtexec` for the benchmark,
-`tegrastats` for power. No C++ or Rust runtime is built for this paper.
+⚠️ **The loop is worth its cost.** At J3B, B0 still scores **43.8 %** against
+geodesic's **39.7 %**. Adaptivity is a good trade; the point is that the cost is
+real, measurable, and *separable* from what it buys.
 
 ---
 
-## 3. The premise: B0 wins the static task, and the axis is closed
+## 2. The objectives
 
-This section exists so that nobody — including a future reader of this repo —
-re-opens it. **Five independent lines of evidence**; the fourth is structural
-rather than empirical, and the fifth closes the memory hypothesis with a bound.
+### RQ1 — Is exploitability a cost of adaptivity? — 🔶 **supported, n = 1 pair**
 
-### 📏 1. The gap is `observed`, and nothing else
+📏 The geodesic/B0 pair above, disjoint, with the mechanism named and priced.
+⚠️ It is **one controlled pair**. §7 runs 1 and 2 turn it into a dose–response
+curve and a constructive test, both with **zero training**.
 
-Conditioned on holding a sightline, the learned policy converts it into mission
-capability **exactly as well as B0 does**:
+### RQ2 — Where does an adversary's power come from? — ✅ **answered**
 
-| conditioned on holding a sightline | random | MLP | DeepSets | GNN | B0 |
-|---|---|---|---|---|---|
-| `capable / observed` | 0.489 | 0.580 | 0.583 | **0.620** | **0.617** |
+📏 5 seeds × 128 episodes: **directionality −10.6 pp, adaptivity −2.9 pp** on B0.
+An adversary's power is overwhelmingly about *where the energy goes*.
+[`results/j_ladder.md`](results/j_ladder.md).
 
-The entire gap is `observed` — 📏 59.6 % against 93.6 %, observer range 218.9 m
-against 88.7 m, `role_entropy` 0.51 against 0.10. **One behaviour is missing: a
-drone commits to closing and the others commit to extending behind it.**
-`hop_mean | observed` is a *shadow* of observer position, not a separate relay
-failure — six interventions moved it over the range 1.86–1.93 against random's
-1.83.
+### RQ3 — Does co-training reduce the exploitability of a learned loop? — 🔶 **effect measured, mechanism untested**
 
-### 📏 2. The objective is not the problem — B0 wins the reward too
+📏 Co-training moves the learned policies **down** the exploitability axis:
+11.12 → 7.51 and 10.45 → 7.29, at unchanged capability and unchanged chain length,
+with **no cost on the clean rung** (+0.3 pp at J1). The off-diagonal shows
+robustness rather than opponent-overfit — `advtrain-J2` beats `advtrain-J3B` *on
+J3B*. [`results/gate_b.md`](results/gate_b.md).
 
-Re-read 2026-09-02 from [`results/rq2_stageB.jsonl`](results/rq2_stageB.jsonl);
-no new runs. `RolloutMetrics.summary()` has always reported `episode_return` and
-every policy goes through the same harness. Eval split, N = 5, 5 seeds, CUDA:
+⚠️ **Why it works is untested.** The leading candidate is **path redundancy**:
+`routing.py` picks the widest *single* path and the jammer has *one* beam, so a
+second threshold-clearing, edge-disjoint path would make the beam's kill
+recoverable. ⛔ **No metric for this exists** — §7 run 3.
+⛔ **J4**, a learned jammer, is still not built.
 
-| policy | `mission_capable` | `episode_return` |
-|---|---|---|
-| random | 10.6 % | −170.0 |
-| mlp | 30.7 % | −3.0 |
-| deepsets | 39.8 % | 71.8 |
-| gnn | 40.7 % | 85.8 |
-| **B0** | **55.7 %** | **222.9** |
+### RQ4 — Does it survive the airframe? — ⛔ **not started**
 
-📏 **B0 beats the best learned policy by 2.6× on the reward that policy is trained
-on.** And across 20 rows spanning 5 policies, 3 swarm sizes, both action spaces
-and both shaping variants, `episode_return` and `mission_capable` rank-correlate
-at **ρ = 0.987**.
-
-🔍 **The margin is understated.** PBRS pays `(γ−1)·Φ` per step for *holding* a good
-state, so shaping is a drag proportional to `Φ` and therefore largest for the best
-policy: 📏 B0's mean shaping is **−0.018/step** while the learned policy receives
-**7× more** shaping amplitude. B0 wins by 137 return points while collecting
-*less* shaping than its opponent. Under the mission term alone the gap is wider.
-
-⛔ **So the "the learner is winning at its true objective and losing at a metric it
-was never given" hypothesis is dead.** It loses at both, consistently. The reward
-points the right way.
-
-⚠️ **What ρ = 0.987 does *not* show.** Rank-alignment says the reward *points*
-correctly, not that its *shape* is easy to optimise. The remaining failure is
-optimisation, not specification.
-
-### 📏 3. Eight interventions, eight nulls, and the last one had a measured mechanism
-
-`w_hold`, `w_relay`, `d_ref` 1500→400, `potential_scale` 10→30, recurrence, the
-agent-specific critic, `PHI_V2` — and separately the velocity action space.
-`docs/inherited/DECISIONS.md` retro-explained the first six as *arithmetic, not
-mechanism*: each scaled a potential whose directional gradient in the operating
-regime was 0.013–0.03 per step.
-
-📏 [`results/phi_v2_gate.md`](results/phi_v2_gate.md) **falsified that
-retro-explanation.** `PHI_V2` raised the closing gradient **5.8×** (0.0133 →
-0.0774 per 8 m step, from 0.25× the energy bar to 1.42×) and turned an *exact
-zero* into a real gradient for the four drones out of five that had none — and the
-observer moved **11.8 m of a 130 m gap**. The arithmetic was fixed and the
-behaviour did not move.
-
-⛔ **The Φ axis is closed.** Do not propose a ninth shaping intervention. Do not
-propose a second action space. Both were pre-declared, both were measured, both
-failed, and continuing is the "always one more thing to try" failure this project
-has been warned about since `ROADMAP.md` was written.
-
-### 📏 4. And the reason is structural: the advantage cannot tell drones apart
-
-Measured 2026-09-02, declared before the run —
-[`results/credit_assignment.md`](results/credit_assignment.md),
-`scripts/measure_credit.py`.
-
-One value per global state is broadcast across `N` rows, so
-`A[t,b,i] = G[t,b,i] − V[t,b]` and therefore `Var_i(A) = Var_i(G)` **exactly**.
-That between-drone variance is the entire budget of drone-differentiating credit:
-whatever the policy gradient knows about *which drone should do what*, it knows
-through that and nothing else.
-
-📏 Decomposing the per-drone return by the law of total variance, eval split,
-stage 4, F4/J1, 64 envs × 600 steps, 3 seeds:
-
-| policy | **differentiable share** |
-|---|---|
-| random | **0.04 %** |
-| B0 | **0.11 %** |
-| GNN | **0.16 %** |
-
-🔒 The declared rule was `< 5 %` confirms. Measured **0.04–0.16 %**, two orders of
-magnitude inside it, and unchanged at the `γλ = 0.947` horizon GAE actually sees.
-**99.84–99.96 % of the return variance is identical across drones.**
-
-⛔ **And the structural half is exact rather than measured.** `reward_terms()`
-broadcasts `mission`, `idle`, `battery_variance` and `shaping` through `team(x)`,
-so they cancel out of `Var_i` *exactly*; `w_relay` ships at 0.0. **Only `energy`
-and `effort` — two motion costs — can differ between drones**, and the
-measurement returns four exact zeros matching that term for term. Pinned by
-`tests/test_measure_credit.py`.
-
-☠️ **This converts eight nulls into one mechanism with a prediction:** an
-intervention that modifies only team reward terms cannot change role
-differentiation, because team terms contribute exactly zero to the only variance
-that can distinguish drones. `w_hold`, `d_ref`, `potential_scale` and `PHI_V2`
-are all team terms. ⚠️ It also reframes `w_relay`'s null — its 71× rise took the
-differentiating share from ~0.04 % to ~2.9 %, which is *"still negligible"*, not
-*"per-drone credit does not help"*.
-
-🔍 **So the reward axis is closed structurally, not by exhaustion** — a better
-reason than "we tried eight things", and it redirects the search to the critic
-and the advantage, neither of which has been touched. ⛔ That is not a licence for
-a ninth intervention: anything built on it needs its own gate, declared before
-its own run, at 5 seeds, judged on the worst.
-
-### 📏 5. And it is not memory either — perfect target information is worth −0.4 pp
-
-Measured 2026-09-02, [`results/memory_horizon.md`](results/memory_horizon.md).
-
-B0 carries a target-belief filter with dead reckoning and the actors cannot
-represent one, which looked like a structural disadvantage. 📏 It is not:
-
-| policy | mission-capable |
-|---|---|
-| `B0-geodesic` — roles by index, **no belief filter** | 47.1 % [3.1] |
-| **`B0`** — ranked roles + belief + spare posts + link repair | **57.2 % [3.5]** |
-| `B0-oracle` — **+ ground-truth target state** | 56.8 % [3.2] |
-
-🔒 **`B0` → `B0-oracle` is −0.4 pp**, and that is a *hard upper bound on memory*:
-any belief filter or recurrent state can at best reconstruct an estimate of target
-state, while the oracle **is** target state. ⛔ Memory cannot be worth more than
-the oracle, and the oracle is worth nothing measurable.
-
-📏 An independent measurement agrees. Unseen runs preceded by a sighting — the only
-intervals a belief could bridge — are **p50 ~35 steps, p90 ~320**, and the target
-has moved **~85 m** by the time the gap closes, against B0's own 89 m stand-off.
-Frame stacking at k=8 covers 21 % of gaps but **0.9 % of blind time**. Both
-branches that would have justified building something fail.
-
-🔍 **So B0's +10.1 pp over `B0-geodesic` is not its memory — it is ranked roles.**
-Which is exactly the capability §3.4 measures the learned policy as structurally
-unable to express. The two findings converge on one deficit, not two.
-
-⛔ **Do not rebuild recurrence for target memory.** ⚠️ The G8 recurrence test *was*
-confounded (frozen critic, and `grad_norm_clip` applied jointly under a GRU), and
-that objection stands as method — it is simply aimed at a quantity bounded above
-by 0.4 pp.
-
-### 🔧 The one remaining probe, and it is timeboxed to one week
-
-**Behaviour-clone B0, then PPO from that initialisation.** `B0Policy.act(flat)`
-returns actions in the same `[-1, 1]` space the actor consumes, reads only
-`obs["flat"]`, and is deterministic — so this is supervised regression against a
-teacher samplable at 📏 3.17 M env-steps/s. A day of work.
-
-🔒 **Its purpose is not to re-open §3.** It exists to make the learned protagonist
-as strong as possible so that RQ1's comparison is interesting. If it works, the
-exploitability numbers improve. If it does not, nothing downstream changes.
-
-| outcome | reading |
-|---|---|
-| BC policy holds ~90 % `observed` and PPO improves from there | **exploration.** The coordination trap is real and BC-init is itself the fix |
-| PPO decays back toward the 218 m stand-off | **credit assignment.** PPO is walking *down* a return gradient, 223 → 86, under a reward measured to point the right way. The named suspect is that the swarm is **one parameter-shared agent with a single centralised critic** (`src/training/ppo.py`), which cannot represent an advantage that differs by role — and role differentiation is exactly the missing behaviour |
-
-⛔ **One week. Then stop regardless of outcome.**
+ONNX → TensorRT on a Jetson Orin Nano: latency, p99 jitter, power against the
+400 ms control period, and *does quantisation degrade coordination more than
+control?* Gate C. 🔧 Pure Python. Hardware is in hand; **the export risk is
+unretired.**
 
 ---
 
-## 4. The jammer, J0–J4
+## 3. The premise: B0 wins the static task, and that axis is closed
 
-The jammer enters SINR **at the receiver** (`core.py`: `denom_mw` is indexed by
-the listening node and broadcast across transmitters). That is correct physics —
-jamming raises a noise floor at an antenna, and there is no such thing as jamming
-an outgoing signal.
+⛔ **Do not re-open this.** Five independent lines, each measured:
 
-🔍 It inverts the obvious strategy. The feed flows observer → relays → MCV and the
-observer *never listens*, so the drone closest to the jammer, most exposed and
-most illuminated, is the one target that cannot be hurt. 📏 Measured: pointing at
-the observer scores **59.9 %** against isotropic's 58.6 % — **worse than not
-aiming at all**.
+| | finding |
+|---|---|
+| 1 | The gap is **`observed` and nothing else** — conditioned on a sightline the GNN converts it as well as B0, 0.620 vs 0.617 |
+| 2 | **B0 wins the reward too** — 222.9 vs 85.8 `episode_return`, and return rank-correlates with `mission_capable` at **ρ = 0.987** over 20 rows |
+| 3 | **Eight pre-declared interventions, eight nulls**, the last with a *measured-adequate* gradient |
+| 4 | **Structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** of the total. Every team reward term cancels *exactly*, so no shaping knob can move role differentiation — [`credit_assignment.md`](results/credit_assignment.md) |
+| 5 | **Not memory either**: perfect target state is worth **−0.4 pp**, a hard upper bound — [`memory_horizon.md`](results/memory_horizon.md) |
 
-📏 And the MCV is not a degenerate target. Isotropic jammer power received:
-drones **−58 to −61 dBm**, MCV **−91.9 dBm** — 31 dB of shelter, because the
-drones are airborne with line of sight while the MCV sits in ground clutter a
-kilometre away and takes the NLoS branch.
+📏 And the budget is priced: B0's whole design advantage is **~10.3 pp** (link
+repair 6.9, ranked roles 3.4, belief ~0) against a **15.0 pp** gap. Acquiring
+every component would not close it — [`b0_ablation.md`](results/b0_ablation.md).
 
-| rung | jammer | what it isolates | state |
+---
+
+## 4. The adversary ladder
+
+| rung | emitter | isolates | state |
 |---|---|---|---|
-| **J0** | none | exists | ✅ built |
-| **J1** | isotropic, fixed power | the inherited jammer. B0 scores 58.6 % | ✅ built |
-| **J2** | directional, **fixed** target | separates *directionality* from *adaptivity*. ⛔ Not optional: without it, "the adaptive jammer beat B0" might only mean "a beam beat B0" | ✅ built |
-| **J3** | directional, **greedy-adaptive** — retarget the chain's weakest receiver each step | adaptive without learning | ✅ built |
-| **J3B** | directional, **exhaustive best response** — argmin of end-to-end capacity over every candidate boresight | one-step-optimal without learning | ✅ built |
-| **J4** | directional, **learned** by alternating best response with an **opponent pool** | RQ3. The only rung that can *commit* over time | ⛔ **not built** |
+| **J0** | none | exists | ✅ |
+| **J1** | isotropic, fixed power | the inherited emitter | ✅ |
+| **J2** | directional, **fixed** on the MCV | separates *directionality* from *adaptivity* | ✅ |
+| **J3** | directional, greedy retarget | adaptive without learning | ✅ |
+| **J3B** | directional, **exhaustive best response** | one-step-optimal | ✅ |
+| **J4** | directional, **learned**, opponent pool | RQ3's stretch | ⛔ **not built** |
 
-📏 First measurement, [`results/j_ladder.md`](results/j_ladder.md) — ⚠️ B0, CPU,
-32 episodes, **one seed**. A smoke test; the *ordering* is what is reported:
-
-| rung | `mission_capable` | mean e2e | `observed` |
-|---|---|---|---|
-| **J0** none | 60.2 % | 24.0 Mbps | 94.2 % |
-| **J1** isotropic | 54.3 % | 21.1 Mbps | 94.2 % |
-| **J2** beam on the MCV | **41.8 %** | 15.8 Mbps | 94.2 % |
-| **J3** beam, greedy | 44.5 % | 16.7 Mbps | 94.2 % |
-| **J3B** beam, best response | 42.2 % | 15.7 Mbps | 94.2 % |
-
-✅ `observed` is **identical at every rung** — the property `test_jammer.py` pins.
-The sensor is geometry and the emitter must not touch it; without that the
-exploitability gap would be uninterpretable.
-
-### The beam
-
-No array processing. The 3GPP element pattern, TR 38.901 §7.3:
-
-```
-A(θ) = −min[ 12·(θ/θ_3dB)² , A_max ]   dB,   θ_3dB ≈ 25°,  A_max = 30 dB
-```
-
-- **Continuous in angle**, so J4's policy has a usable gradient. A hard cone makes
-  the action effectively discrete.
-- **Azimuth only.** Drones at 40–80 m, jammer at ground level a kilometre out:
-  elevation angles are ~5° and elevation discrimination buys nothing.
-- ⛔ **Beamwidth is not an action.** It smuggles the power axis back in — a wide
-  beam *is* a barrage jammer and a narrow one is a spotlight.
-- ⛔ **Power stays fixed.** A barrage jammer with no cost always plays maximum.
-- **Position stays fixed** to the target. A second road-mobile emitter is the v2
-  escalation if the swarm beats the first one too easily.
-
-**Aiming carries one step of latency.** 🔒 Required rather than tolerated: the
-emitter changes capacity, capacity changes the routed chain, and the chain is what
-J3 targets — aiming at *this* step's chain would be circular.
-
-**What the jammer sees:** bearings and received powers of the drones'
-transmissions, not their positions. Realistic ESM, nearly free because the
-received-power matrix is already computed. Keep a ground-truth-fed variant as the
-ablation that bounds what the restriction costs — the same idiom as `b0` against
-`b0-oracle`.
-
-⚠️ **The simplification to state, not to fix.** The model treats the relay as a
-one-way rate-limited sensor feed, so jamming affects receivers only. A real link
-layer carries acknowledgements, so a jammed observer would eventually lose its
-link too. Requiring `min(SINR_ij, SINR_ji)` to clear would capture that in one
-line — but measure before adopting it, because it may hand the jammer the
-degenerate "kill the observer" attack that geometry currently denies. For a video
-downlink, one-way is the defensible abstraction.
+🔒 The beam is 3GPP TR 38.901's element pattern, `A(θ) = −min[12(θ/θ_3dB)², 30]`
+with **θ_3dB = 25° the FULL half-power beamwidth** — the −3 dB point is at 12.5°.
+⛔ Beamwidth is not an action and power is fixed; both smuggle the transmit-power
+axis back in. Aiming carries one step of latency, which is required rather than
+tolerated: aiming at *this* step's chain would be circular.
 
 ---
 
 ## 5. Gates
 
-Every gate is judged on the **worst seed**, at >= 5 seeds.
+🔒 Every gate is judged on the **worst seed**, at >= 5 seeds, with the rule
+declared before the run and never edited afterwards.
 
-### Gate A — velocity setpoints. ⛔ **RESOLVED 2026-09-02: not met. Does not ship.**
+| gate | question | verdict |
+|---|---|---|
+| **A** | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
+| **B** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
+| **C** | does quantisation hurt coordination more than control? | ⛔ **not run** (RQ4) |
+| Φ v2 | does a steeper potential move the observer? | ⛔ **killed** — 11.8 m of a 130 m gap |
+| k = 2 | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
 
-Declared 2026-08-27; full record in [`results/gate_a.md`](results/gate_a.md).
-The rule required steps at the speed cap below 20 % **and** steps at the map
-boundary below 5 %.
+⚠️ **Gate B's verdict stands as declared, and its interpretation has moved.** It
+was read as *"scripted policies are more exploitable"*; §1 shows the variable is
+the loop, not the script. The number is unchanged; the claim it supports is not.
+Gate B's declaration, its two amendments and its verdict live in
+[`results/gate_b.md`](results/gate_b.md), reproduced verbatim there.
 
-📏 Velocity setpoints eliminated the speed-cap pathology outright (26.1 % → 0.4 %,
-against an inherited 57 %) and **quadrupled** boundary occupancy (14.5 % → 72.6 %),
-at a cost of **18.3 pp** with disjoint seed ranges. Raising exploration to escape
-the boundary re-created the saturation the interface had removed. `EnvConfig.
-action_space` defaults to `"acceleration"`; `"velocity"` is retained behind the
-flag and exercised by tests on both branches.
+### Gate C — quantisation and coordination. ⛔ **Not yet run.**
 
-✅ **The action-space question became a negative result with a mechanism**, and it earns one paragraph in
-the paper: an interface whose exploration noise does **not accumulate** cannot
-reliably escape the absorbing region the env creates by zeroing the velocity
-component that hits a limit.
-
-☠️ It also produced a **methodological finding that governs every learned number
-here**: at `sigma ≈ 1.08` the same policy measured 1.3 % of steps above 24 m/s
-when sampled and **69.9 %** when evaluated at the Gaussian's mean — a 54× gap. A
-`mission_capable` number is only trustworthy while sigma is small enough that the
-mean represents the behaviour that was optimised. ⛔ Do not raise
-`initial_log_std` above ~0 without reporting the sampled-vs-mean gap alongside.
-
-### Gate B — adversarial robustness. ✅ **CONFIRMED 2026-09-03.**
-
-📏 B0 **13.24 pp** [11.42–13.58] against the adversarially-trained policies'
-**7.51** [7.12–10.90] and **7.29** [6.50–9.06] — disjoint, worst-seed, and on both
-normalisations. Full record and caveats in [`results/gate_b.md`](results/gate_b.md).
-
-🔒 **Reproduced verbatim as declared 2026-08-27. Not edited.**
-
-Primary readout is the **exploitability gap**: how far each policy's
-`mission_capable` falls between **J1** and the strongest adversary reached — J3 at
-minimum, J4 if it trains. 📏 The window is 11 pp.
-
-| | rule |
-|---|---|
-| **confirm** | B0's exploitability gap exceeds the adversarially-trained policy's, at 5 seeds, on the worst seed |
-| **refute** | B0 degrades no more than the learned policies. The scripted baseline is then robust as well as strong — a legitimate reportable result about the task rather than about the method |
-| **control** | ⛔ **J2 is required.** Without a fixed-target directional rung, a result at J3 or J4 cannot distinguish "the adversary adapted" from "the adversary had a beam" |
-| **report** | the full cross-product, not just the diagonal. A policy robust only to the adversary it trained against has overfitted to one opponent, and the off-diagonal is the only place that shows |
-
-⛔ **Not** `hop_mean | observed` (it measures geometry) and **not**
-`chain_occluded` (it confounds with hop count, `corr = 0.963`).
-
-> ⚠️ **Amendment 1, 2026-09-02 — recorded, not substituted.** The declaration's
-> "📏 the window is 11 pp" cited the inherited probe's 47.7 %. 📏 The 5-seed CUDA
-> re-measurement supersedes it: the strongest rung is **J3B**, the ladder is
-> **monotone**, and B0's measured window is **13.24 pp** [11.42 – 13.58]
-> ([`results/j_ladder.md`](results/j_ladder.md)). The **rules above are
-> unchanged**; only the number the window refers to has moved, and it moved in
-> the direction that makes Gate B answerable rather than blocked.
->
-> ⚠️ **Amendment 2, 2026-09-02 — the normalisation, and this one was written
-> AFTER seeing that the two answers disagree.** Stated plainly because it is the
-> kind of choice this project's rules exist to constrain:
->
-> | policy | J1 | J3B | gap (absolute) | gap (relative) |
-> |---|---|---|---|---|
-> | B0 | 57.3 % | 43.8 % | **13.24 pp** | **23.1 %** |
-> | gnn/deep (trained at J1) | 39.9 % | 28.7 % | **11.12 pp** | **27.9 %** |
->
-> In **absolute pp** B0 degrades more → Gate B **confirm**. In **relative** terms
-> the GNN does → Gate B **refute**. A policy starting 17 pp lower has less to lose
-> in absolute terms, and a reviewer will say so immediately.
->
-> 🔒 **Resolution: report BOTH, and treat the claim as supported only when they
-> AGREE.** That is the one resolution available which does not amount to choosing
-> the normalisation whose answer is already known. ⛔ Picking either alone, now,
-> would be exactly the post-hoc rule-invention this file opens by forbidding.
->
-> ⚠️ **Neither row above is Gate B.** `gnn/deep` was trained at J1, not
-> adversarially; Gate B compares B0 against the *adversarially-trained* policy,
-> which does not exist yet.
->
-> ⛔ **And the gap is not closing.** B0 − GNN is 17.4 pp at J1 and **15.0 pp** at
-> J3B, so the strongest available adversary narrows B0's lead by **2.4 pp**.
-> 📏 Linearly extrapolated, closing the remaining 15.0 pp needs ~**6x** more
-> adversarial pressure than the whole J1 → J3B ladder supplies. 🔍 **The thesis
-> bet is therefore specifically about adversarial TRAINING (RQ3), not adversarial
-> evaluation.** Nothing measured so far bears on it in either direction.
-
-### Gate C — quantisation and coordination
-
-🔒 **Reproduced verbatim as declared 2026-08-27. Not edited.**
+🔒 **Declared 2026-08-27 and reproduced verbatim. Not edited.**
 
 | | rule |
 |---|---|
@@ -524,87 +157,102 @@ minimum, J4 if it trains. 📏 The window is 11 pp.
 
 ---
 
-## 6. What was cut, and it is not coming back
+## 6. Framings that were refuted, and why they are kept
 
-A paper carries one claim. These were live in the 2026-08-27 draft and are now
-closed, demoted or deleted. ⛔ **Each line is a decision, not a backlog item.**
+⛔ **A refuted framing is evidence, not embarrassment.** Each was killed by a run
+designed to test it, and the sequence is why the current claim should be trusted.
 
-| cut | to what | why |
+| framing | killed by | when |
 |---|---|---|
-| **Further `Φ` work** | ⛔ deleted | Eight nulls. §3.3. The last one had a *measured-adequate* gradient and still moved nothing |
-| **The action-space axis** | one paragraph | Gate A resolved. §5 |
-| **RQ2 architecture ladder** | one table | Finished and null: MLP → DeepSets **+9.1 pp** disjoint, DeepSets → GNN **+0.9 pp** overlapping. The live part is the N = 8 zero-shot column, which stays |
-| **Fidelity ladder, 5 rungs → 2** | `docs/REDUCTION.md` task 2 | Keep only 📏 F1-harder-than-F4, which now *serves* RQ2's non-monotonicity theme rather than standing alone |
-| **"Three contributions, each able to fail on its own"** | one claim, four RQs | The framing that fits 80 pages does not fit 8 |
-| **A C++/Rust inference runtime** | ⛔ not built | RQ4 is Python: TensorRT bindings, `trtexec`, `tegrastats` |
-| **A bigger map, a second city, a better channel** | ⛔ not built | §9, unchanged |
+| *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 |
+| *The adversary ladder is non-monotone; adaptivity does not help* | the 5-seed CUDA re-run **reversed** a one-seed CPU result | 2026-09-03 |
+| *Exploitability is a cost of **capability*** | the frontier run: `b0-geodesic` is **more capable than every learned policy and less exploitable than all of them** | 2026-09-04 |
 
-⚠️ **The one thing that is *not* cut and looks like it should be:** the full
-policy × adversary **cross-product**. It is the whole of RQ3 and 📏 it costs
-minutes. Do not reduce it to a diagonal.
+🔒 **The third was refuted *before it was declared*,** because it was fitted over
+eight policies rather than written down after four. ⛔ Hold the current claim to
+the same standard: §7 runs 1 and 2 exist to break it.
 
 ---
 
-## 7. Sequence
+## 7. The roadmap
 
-**Today: 2026-09-02.** ~6 months of runway, then the official 5-month window from
-March 2027. The official window is for **writing**, which is how it ends up good.
+🔒 **Ordered by evidence-per-hour, not by ambition.** Runs 1–3 need **no
+training** — they score policies that already exist.
 
-| when | what | why then |
+### Run 1 — the constructive test. ⭐ **Do this first.** Zero training.
+
+🔍 `B0Config.repair_score` already takes **`"clearance"`** instead of
+`"capacity"`. 📏 `_clearance` is **pure geometry**; the jammer enters only at
+`denom_mw` in SINR. **So `repair_score="clearance"` is a repair loop hill-climbing
+on a quantity the jammer cannot touch** — an adaptive policy that is *open-loop
+with respect to the adversary*.
+
+| | prediction |
+|---|---|
+| **claim survives, constructively** | capability stays well above geodesic's 45.6 %, exploitability stays near geodesic's 6.39 pp. **That is the frontier-breaking policy**, and it is a one-word config change |
+| **claim survives, plainly** | capability *and* exploitability both track `"capacity"`. Clearance is a proxy the jammer reaches indirectly through the routed chain |
+| **claim is in trouble** | exploitability stays at B0's 13.24 pp with no capability gain. The loop's *target* is then not what matters, and the mechanism in §1 is wrong |
+
+⛔ Declare the rule in `results/repair_score_gate.md` **before** running.
+
+### Run 2 — dose–response. Zero training.
+
+`repair_amplitude_m` is continuous: **0** (off) → 50 → 100 → **200** (shipped).
+Score capability and exploitability at each. 🔍 If both rise monotonically with
+the amplitude of the loop, RQ1 stops being one controlled pair and becomes a
+**curve** — the strongest evidence available for a mechanism claim.
+
+### Run 3 — build the redundancy metric. Half a day, then zero training.
+
+*"Does a second threshold-clearing path exist that is edge-disjoint from the
+chosen one?"* — computable from the capacity matrix `routing.py` already builds.
+⛔ Nothing measures this today, and it is RQ3's candidate mechanism: score the
+J1-trained and co-trained policies and see whether co-training bought redundancy.
+
+### Run 4 — the learned analogue. **Training.**
+
+📏 `obs["flat"]` carries `noise_dbm` and `e2e_capacity` — the jammed quantities.
+**Mask them and the policy cannot close a loop on what the adversary attacks.**
+That is the learned counterpart of run 1: same capability question, same
+exploitability question, on the learned side.
+🔒 Needs an `EnvConfig` observation-mask flag and a gate declared before the run.
+
+### Then, in order
+
+| | what | why then |
 |---|---|---|
-| ~~run 1~~ | ✅ **DONE 2026-09-02.** J-ladder at 5 seeds x 128 episodes on CUDA, B0 + `gnn/deep`. The ordering **reversed**: monotone, J3B strongest. [`results/j_ladder.md`](results/j_ladder.md), [`j_ladder.jsonl`](results/j_ladder.jsonl) | It gated everything downstream, and it caught a false headline drawn from one CPU seed |
-| **Sep–Oct 2026** | **RQ4 end-to-end.** ONNX export, TensorRT, latency / p99 jitter / power on the Orin Nano | ⚠️ Deliberately first: PyTorch Geometric exports badly, and finding that out in month one is worth more than in month ten. It also depends on nothing else. 🔧 **Deferred by choice on 2026-09-04**; the hardware is in hand and the export risk stays unretired until it runs |
-| ~~in parallel, 1 week~~ | ✅ **DONE 2026-09-02.** The BC-init probe ran and **does not clone B0** — 9.4 % against 58.0 %, because B0 is stateful and BC compounds error. ⛔ No gate was declared: a probe that cannot reach the basin would have measured its own failure | Cheap, timeboxed, and it closed rather than lingering |
-| *in parallel* | `docs/REDUCTION.md` tasks 2–4, then 6 | Housekeeping that pays for the adversary |
-| **Nov 2026 – Jan 2027** | **J4**: opponent pool, alternating best response | The hard, risky part. The buffer lives here |
-| ~~Feb 2027~~ | ✅ **DONE 2026-09-03, five months early.** The policy × adversary cross-product at 5 seeds → **Gate B CONFIRMED**. [`results/gate_b.md`](results/gate_b.md) | 📏 A 10 M-step run costs 2.2 min, so the schedule was never the binding constraint here |
-| **⚠️ owed** | **The `capable_no_division` control for Gate B's chain-length confound.** Declared in [`results/gate_b.md`](results/gate_b.md); re-scores existing checkpoints, no retraining | 📏 The exploitability gap tracks hop count perfectly across all four policies, and a per-hop normalisation reverses the headline. Minutes of compute; it must not go into a write-up unanswered |
-| **Mar – Jul 2027** | Gate C quantisation sweep. 🔒 **Freeze**, recorded with a date and scope. `docs/REDUCTION.md` task 7. Writing and submission | The official window |
+| **RQ4 / Gate C** | ONNX export **locally first**, then TensorRT on the Orin | The only deliverable that cannot fail. PyTorch Geometric may not export; that risk is unretired and cheap to close |
+| **J4** | learned jammer, opponent pool | Strengthens RQ1 and RQ3. ⚠️ Gate B stands without it — the fallback declared in §8 |
+| **Write** | exposé, then the paper | 🔒 **After runs 1–3.** The claim has moved three times in ten days; let the data settle it before it is promised to anyone |
 
-🔒 **Close the TR 36.777 NLoS intercept before the freeze.** One human reading of
-one table, and everything downstream rests on it. Cost if right: an afternoon.
-Cost if wrong and found late: the paper.
-
-**Venue.** **IEEE RA-L** (rolling, no deadline pressure) remains the target, with
-a NeurIPS or ICML workshop submission sooner as insurance and as a first
-publication. ⚠️ Verify any deadline-driven alternative's date early rather than
-discovering it.
+⛔ **Not on the roadmap:** any further reward shaping (§3.4 closed it
+structurally), any further action-space work (Gate A), recurrence (bounded at
+0.4 pp), frame stacking beyond k = 2 (a one-step state needs no longer history).
 
 ---
 
-## 8. Risks, and the fallback for each
+## 8. Risks
 
 | risk | mitigation |
 |---|---|
-| **J4 cycles.** Alternating best response's normal failure mode, and RQ3 is now load-bearing where it once was not | 🔒 **RQ1, RQ2 and RQ4 stand without it.** The paper's fallback spine is the exploitability *methodology* plus the non-monotonicity finding. And RQ2 gets **stronger** if J4 fails: "a learned adversary still did not beat a parked beam" is the loudest version of that claim |
-| **The 5-seed J-ladder re-measurement collapses the J2/J3/J3B differences into noise** | Then RQ2's claim weakens to "adaptivity buys nothing", which is still the finding — the ordering mattered, not the levels. RQ1 and Gate B are unaffected: they need *a* strongest adversary, and J2 is it either way |
-| **PyTorch Geometric will not export cleanly.** Scatter ops, dynamic shapes | Attempt it in month one. If the GNN cannot be deployed that is a *reported result* under Gate C, and a useful one — its measured advantage over DeepSets is a null anyway |
-| **TR 36.777 NLoS intercept is wrong.** Every number re-derives | Verify before the freeze; earlier if possible |
-| **Seed spread swamps every effect.** 📏 Historically 60–78 % over five runs, bimodal | Judge on the worst seed. 📏 The trainer fix already collapsed the GNN seed IQR 3.9 → 0.1, so this is substantially better than it was |
-| **⚠️ Institutional.** Most of this work lands *before* the official March 2027 start | **Not a technical risk and not resolvable in this repo.** Confirm in writing with the supervisor that pre-start work is admissible, before building six months on the assumption |
+| **Run 1 shows the loop's target does not matter** | §1's mechanism is then wrong and RQ1 reverts to a bare correlation. ✅ RQ2 and Gate B's number are unaffected — this is why they are separate objectives |
+| **J4 cycles.** Alternating best response's normal failure | 🔒 RQ1, RQ2 and RQ4 stand without it; the strongest adversary reached is then scripted and the paper says so |
+| **PyTorch Geometric will not export** | ⚠️ Attempt it *locally*, before touching the Jetson. A GNN that cannot deploy is a **reported result** — its measured advantage over DeepSets is a null anyway |
+| **TR 36.777 NLoS intercept is wrong.** Every number re-derives | 🔒 One human reading of one table. Close it before the freeze |
+| **n = 1 environment** | ⚠️ Not resolvable within this project. State it as the limitation it is; the mechanism is at least *named and priced* rather than statistical |
+| **The claim moves a fourth time** | 🔒 Runs 1–2 are pre-declared attempts to break the current one. If it survives them it has been tested, not just fitted |
 
 ---
 
-## 9. What is deliberately not being built
+## 9. Deliberately not built
 
-Unchanged from 2026-08-27.
+📏 Each measured, not assumed — `docs/inherited/DECISIONS.md`.
 
-- **A bigger map.** Longer episodes, harder credit assignment, a full geometry
-  rebuild — spending free compute to make the failing thing harder. 📏 Compute is
-  not the constraint; a 10 M-step run costs 2.2 minutes.
-- **A better channel model.** It is already past the point where it limits the
-  paper. Adversarial pressure on the channel we have is worth more than a more
-  faithful channel nobody attacks. *One exception worth considering:* a knife-edge
-  diffraction term on the clearance margin already computed (ITU-R P.526, ~20
-  lines). That removes a **discontinuity** — the 16–30 dB cliff at clearance = 0 —
-  rather than adding fidelity, and it smooths the landscape where the swarm
-  operates.
-- **Flying below 40 m.** TR 36.777 stops at 22.5 m and drones start sitting inside
-  building boxes.
-- **A second city.** ⚠️ But worth 30 minutes before accepting: the predecessor cut
-  it because LoD2 is a Hessen-only service — yet Hessen contains Wiesbaden,
-  Darmstadt, Kassel and Offenbach. The current eval split is held-out routes
-  through *the same buildings*, which a reviewer will correctly call
-  in-distribution. Held-out map tiles inside the existing box are free regardless,
-  and 📏 the trainer fix opened a new 3.8 pp train→eval gap that makes this
-  criticism more pressing, not less.
+- **A bigger map, a second city, a better channel.** Compute is not the
+  constraint; a 10 M-step run costs 2.2 minutes. ⚠️ Held-out map *tiles* inside
+  the existing box remain free and would answer the in-distribution objection.
+- **Flying below 40 m.** TR 36.777 stops at 22.5 m.
+- **Transmit power or beamwidth as actions.** Three framings, three nulls, and a
+  degenerate optimum for the jammer.
+- **Training at more than one `N`.** It turns the zero-shot columns into
+  in-distribution tests.

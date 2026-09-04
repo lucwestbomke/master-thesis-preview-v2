@@ -1,11 +1,18 @@
 # Gate B — ✅ **CONFIRMED.** Measured 2026-09-03, CUDA, eval split, 5 seeds.
 
-Rule declared **2026-08-27**, reproduced verbatim in [`../PLAN.md`](../PLAN.md) §5
-and unchanged since:
+Rule declared **2026-08-27** and never edited. ⚠️ It lived in `PLAN.md` §5 until
+that file was rewritten on 2026-09-04; it is reproduced here in full so the
+declaration travels with the result rather than surviving only in git history:
 
-> **confirm** — B0's exploitability gap exceeds the adversarially-trained
-> policy's, at 5 seeds, on the worst seed.
-> **report** — the full cross-product, not just the diagonal.
+> | | rule |
+> |---|---|
+> | **confirm** | B0's exploitability gap exceeds the adversarially-trained policy's, at 5 seeds, on the worst seed |
+> | **refute** | B0 degrades no more than the learned policies. The scripted baseline is then robust as well as strong — a legitimate reportable result about the task rather than about the method |
+> | **control** | ⛔ **J2 is required.** Without a fixed-target directional rung, a result at J3 or J4 cannot distinguish "the adversary adapted" from "the adversary had a beam" |
+> | **report** | the full cross-product, not just the diagonal. A policy robust only to the adversary it trained against has overfitted to one opponent, and the off-diagonal is the only place that shows |
+>
+> ⛔ **Not** `hop_mean | observed` (it measures geometry) and **not**
+> `chain_occluded` (it confounds with hop count, `corr = 0.963`).
 
 📏 `results/gate_b_crossproduct.jsonl`, `cuda:0`, eval split, stage 4, F4,
 N = 5, 5 seeds × 128 episodes. B0's rows come from
