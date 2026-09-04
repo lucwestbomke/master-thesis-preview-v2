@@ -20,8 +20,24 @@ binding**:
 
 ## The claim
 
-> 🔍 **Exploitability, not capability, is the right axis on which to compare
-> learned and scripted multi-agent policies.**
+> 🔍 **Exploitability is a cost of ADAPTIVITY, not of capability.** A policy that
+> closes a feedback loop on the quantity an adversary attacks hands that adversary
+> a control input into its own behaviour.
+
+📏 **Measured on a within-family controlled pair, 2026-09-04**
+([`results/frontier.md`](results/frontier.md)): `b0-geodesic` and `B0` share the
+code path, the stations and the chain length (2.00 vs 2.13 hops) and differ by
+`_update_repair`, a hill climb on the jammed quantity. B0 is **11.7 pp more
+capable** and **6.85 pp more exploitable** — 13.24 pp against 6.39, **disjoint
+ranges**. Link repair buys ~6.9 pp of capability and costs ~6.9 pp of
+exploitability, one for one.
+
+⛔ **This is NOT a scripted-versus-learned claim, and that framing is dropped.**
+📏 Both extremes of the exploitability range are *scripted* — geodesic 6.39,
+B0 13.24 — and every learned policy sits between them. ⛔ An earlier framing
+(*"exploitability is a cost of capability"*) was **refuted before declaration** by
+fitting it over eight policies: `b0-geodesic` is more capable than every learned
+policy *and* less exploitable than all of them.
 
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
 command vehicle over a multi-hop chain at >= 15 Mbps, while a jammer degrades
