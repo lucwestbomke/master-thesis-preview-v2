@@ -12,9 +12,12 @@ happens next.**
 
 ## 1. The claim
 
-> 🔍 **Exploitability is a cost of *adaptivity*, not of capability.** A policy that
-> closes a feedback loop on the quantity an adversary attacks hands that adversary
-> a control input into its own behaviour.
+> 🔍 **Exploitability decomposes into damage and a control loop.**
+> `gap = f(threshold proximity) + g(loop strength)`. A policy that closes a
+> feedback loop on the quantity an adversary attacks hands that adversary a
+> control input — **on top of** the damage its operating point already exposes it
+> to. ⛔ The loop is not the only term, and for a policy sitting on the capability
+> threshold it is not the dominant one.
 
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
 command vehicle over a multi-hop chain at >= 15 Mbps, while a directional jammer
@@ -49,6 +52,22 @@ against an adversary. Full record: [`results/frontier.md`](results/frontier.md).
 ⚠️ **The loop is worth its cost.** At J3B, B0 still scores **43.8 %** against
 geodesic's **39.7 %**. Adaptivity is a good trade; the point is that the cost is
 real, measurable, and *separable* from what it buys.
+
+🔒 **And the pair is a conservative test of it.** B0 has *more* capacity headroom
+than geodesic (+6.6 Mbps over the bar against +3.3), so its damage term `f` is
+**smaller** — and its gap is still twice geodesic's. **6.85 pp is a lower bound on
+the loop's contribution.**
+
+📏 **The second term is why nine policies need two.** Every learned policy in this
+project sits within **1.1 Mbps of the 15 Mbps threshold**, where each dB the
+jammer removes crosses the bar without any behavioural response — damage, not
+exploitation. That is why masking the jammed observations was a **null**
+([`results/obs_mask_gate.md`](results/obs_mask_gate.md)): their loop is worth
+1.51 pp of capability, and 11 pp of gap cannot come out of it.
+
+⛔ **So the learned policies in this project cannot test the loop claim.** Doing
+that needs a policy with real capacity headroom — i.e. a genuinely capable one —
+which is the 15 pp gap §3 closed. **Do not re-open §3 to rescue §1.**
 
 ---
 
@@ -182,7 +201,7 @@ somewhere this project does not want to go, because if a B0 variant is the
 frontier-breaking policy then the deliverable is *an improved heuristic*. Runs 2–4
 are controls and need no training; **run 1 is the policy** and it is first.
 
-### Run 1 — ⭐ **the policy.** Training, ~30 min for both arms.
+### ~~Run 1~~ — ⚠️ **DONE 2026-09-04. NULL.** [`obs_mask_gate.md`](results/obs_mask_gate.md)
 
 📏 `obs["flat"]` carries **nine** features the emitter can move: `noise_dbm`,
 `e2e_capacity`, and each neighbour's edge capacity. Everything else is geometry,
