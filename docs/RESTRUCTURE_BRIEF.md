@@ -235,3 +235,118 @@ After editing, confirm and report:
 Report anything in the existing documents that **contradicts** this brief rather
 than resolving it yourself. A contradiction is more likely to mean the brief is
 wrong than the repo is.
+
+---
+
+## 7. Amendments — resolved 2026-09-06, after the restructure was applied
+
+🔒 **Recorded, not edited in place.** The brief above is unchanged; this section
+says where it was wrong and what was done instead. ⛔ Every resolution below
+follows the brief's own last line — *a contradiction is more likely to mean the
+brief is wrong than the repo is* — and each one was checked against `results/`,
+which is unchanged throughout.
+
+### 1. ☠️ §5 asked to keep a status that a measurement had already replaced
+
+**The brief says:** keep *"the ☠️ confounded status of line 3"* of §3's five lines.
+
+**The repo says:** line 3 reads **✅ RESTORED 2026-09-06**. It was raised as
+confounded on 2026-09-04 — all eight nulls measured at ~5,900 Adam steps — and
+📏 Gate D then tested that confound directly and it went the *other* way: **10x
+the gradient budget costs 32 pp**.
+[`../results/capability_gates.md`](../results/capability_gates.md).
+
+⛔ **Resolved in the repo's favour, by doing nothing.** The five-line table is
+byte-identical to what it was before the restructure. ⚠️ The brief was written
+against a snapshot that predates Gate D's verdict; ✅ its *intent* — do not soften
+the re-opening — is satisfied, and §3 now says so explicitly.
+
+### 2. ⚠️ §1's verbatim text contains a word §4 forbids
+
+**The brief says both:** copy RQ2 in verbatim, *"If the loop is the
+vulnerability…"*; and **"vulnerability" is not a term in this project**, with the
+checklist demanding zero occurrences outside the glossary's note.
+
+⛔ **Resolved toward the glossary**, which is the brief's own reasoning: the two
+words *"were being used interchangeably and that is a defect"*. `PLAN.md` §2 RQ2
+reads **"If the loop is what makes a controller exploitable, can the loop be kept
+but trained so that it cannot be led?"** — the same question, in the project's own
+vocabulary.
+
+📏 **Worth recording: the repo had zero occurrences to begin with.** The only
+place the word appeared was this brief. The defect it names is real but was
+already absent from the documents.
+
+### 3. 🔒 The RQ numbers in `results/` are now permanently offset, and that is correct
+
+**The conflict:** §4 asks that the glossary's terms be *"used consistently
+everywhere else"*, and §0 forbids editing `results/`. But
+[`gate_b.md`](../results/gate_b.md), [`obs_mask_gate.md`](../results/obs_mask_gate.md)
+and [`j_ladder.md`](../results/j_ladder.md) say **"RQ3"** for co-training, which
+this restructure renamed **RQ2** — and
+[`rq2_ladder.md`](../results/rq2_ladder.md) keeps the *predecessor's* numbering
+entirely, where "RQ2" is the **architecture ladder**.
+
+⛔ **Not resolvable by renaming, and it should not be.** A file in `results/`
+records a rule declared before a run; renumbering it after the fact is exactly the
+edit §0 forbids. ✅ **Resolved by a pointer instead**, in three places — `PLAN.md`
+§2, `AGENTS.md`, and [`GLOSSARY.md`](GLOSSARY.md): **read the question, not the
+number.**
+
+⚠️ **This is a permanent property of the repo now**, not a defect to be cleaned up
+later. Any future renumbering inherits it.
+
+### 4. ⚠️ Two of the three time-boxed gates were already closed when the box was written
+
+**The brief says:** *"Gates D–F are budgeted at three weeks"* and *"if Gates D–F
+all null"*, as though all three were pending.
+
+**The repo says:** 📏 **D and E are closed and both NULL** — λ null-to-harmful and
+10x the budget at −32 pp; per-drone credit over a **12x** weight range inside a
+single cell's seed noise. `PLAN.md` §5,
+[`capability_gates.md`](../results/capability_gates.md).
+
+✅ **Resolved by keeping the box verbatim and stating what is left under it.** The
+box is a *budget*, and a budget survives its first two line items being spent.
+`PLAN.md` §3 and §7 item 3 now name **F** as what the box has left.
+
+### 5. ⚠️ "§4 unchanged" could not survive §2's own renumbering
+
+**The brief says** §4 is unchanged. But §4 tagged **J4** as *"RQ3's stretch"* —
+the old RQ3, which §2 of the brief renames **RQ2**. Left alone, the tag would
+point at deployment.
+
+✅ **Resolved as a cross-reference, not content.** `| **J4** | … | RQ2's stretch |`.
+🔒 The rung, the beam pattern, the `θ_3dB = 25°` note and the ⛔ exclusions in §4
+are untouched. The same applies to four other stale cross-references in §3, §7,
+§8 and §9, each rewritten to name **the J-ladder** or **the architecture ladder**
+rather than a number that has moved.
+
+### 6. 🔧 §6's row was given in a different column order than §6's table
+
+**The brief's row:** `framing | reframed 2026-09-06 | superseded by three RQs…`.
+**The table's header:** `framing | killed by | when`.
+
+✅ **Resolved by placing the brief's cells to match the header**, and by adding one
+note under the table: ⚠️ the new row is a **reframing**, not a refutation — no
+measurement killed it, the organisation of the same evidence changed. §6 exists
+for framings *"killed by a run designed to test it"*, and this one was not.
+
+### 7. ☠️ Two claims in `AGENTS.md` that the restructure surfaced as wrong
+
+Not contradictions with the brief — contradictions the brief's instruction to
+rewrite that section exposed. Both corrected against
+[`gate_b.md`](../results/gate_b.md), which is unchanged.
+
+| claim | status |
+|---|---|
+| *the `capable_no_division` control is declared and **not yet run*** | ⛔ **wrong.** It ran 2026-09-04. 📏 B0's gap moves **13.24 → 12.85 pp** while every learned policy's collapses to **0.44 – 5.46 pp** — the division confound is **refuted**. ⚠️ The other half — *a longer chain has more links for the beam to find* — is **not** closed, and `AGENTS.md` now says so |
+| *a per-hop normalisation **reverses** the headline* | ⛔ **dropped.** 📏 No file in `results/` or `PLAN.md` carries it, so under §0 it cannot be restated; and the control it warned about has since run |
+
+### ✅ What the brief got right, and is worth keeping
+
+🔒 **The three-RQ structure, the instrument framing, the time box and the
+glossary all stand exactly as written.** Every amendment above is a stale
+cross-reference or a wording collision — ⛔ **none of them touches the framing
+itself**, and none required a change to a number, a rule, a declaration or a
+verdict.
