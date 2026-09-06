@@ -44,8 +44,10 @@ command vehicle over a multi-hop chain at >= 15 Mbps, while a jammer degrades
 links. 📏 **The scripted baseline B0 wins the static task by 15.0 pp** (55.7 %
 against the GNN's 40.7 %, eval split, 5 seeds) — and that is a **settled premise
 of this work, not an open question.** Heuristics win static, fully specified
-problems, and [`PLAN.md`](PLAN.md) §3 closes the axis on three independent lines
-of measured evidence:
+problems, and [`PLAN.md`](PLAN.md) §3 — ⭐ retitled **"the instrument"** on
+2026-09-06, because a capable learned policy is a *prerequisite for testing RQ1 on
+learned controllers*, not an objective — closes the axis on three independent
+lines of measured evidence:
 
 * 📏 the gap is **`observed` and nothing else** — conditioned on a sightline the
   GNN converts it as well as B0 does, 0.620 against 0.617;
@@ -97,39 +99,75 @@ happens to be scripted; the question asked of it is how much of that capability 
 adversary can take away. ⚠️ Re-opening it again needs a *new* mechanism and a gate
 declared before its run, not another sweep of a knob.
 
-**Four objectives, one arc** — an adversary that adapts → a policy co-trained
-against it → running on the hardware that has to fly it. Full text in
-[`PLAN.md`](PLAN.md) §2:
+**Working title** — *The cost of adaptation: measuring and removing
+exploitability in multi-agent relay under directed jamming.* **Goal** — show that
+a controller's own repositioning loop is what makes it exploitable, measure how
+that cost scales, and demonstrate that adversarial co-training removes it.
 
-1. **RQ1 — does the heuristic's advantage survive an adversary that adapts?**
-   ✅ **No — Gate B CONFIRMED 2026-09-03.** 📏 The exploitability gap J1 → J3B is
-   **13.24 pp** for B0 against **7.51 / 7.29 pp** for the adversarially-trained
-   policies — disjoint ranges, worst seed, both normalisations.
+⭐ **Three research questions, one arc, restructured 2026-09-06** — an adversary
+that adapts → a policy co-trained against it → running on the hardware that has
+to fly it. ⛔ **Nothing measured changed**; the old RQ2 is folded into RQ1 and the
+capability programme became **the instrument**, not an objective. Old → new
+mapping, and the full text, in [`PLAN.md`](PLAN.md) §2. Terms are defined once, in
+[`docs/GLOSSARY.md`](docs/GLOSSARY.md).
+
+1. **RQ1 — does adaptation create exploitability, and how does it scale?**
+   ✅ **Supported.** 📏 The exploitability gap J1 → J3B is **13.24 pp** for B0
+   against **6.39 pp** for `b0-geodesic` — same scripted family, **disjoint
+   ranges** — and **7.51 / 7.29 pp** for the adversarially-trained policies, worst
+   seed, both normalisations (Gate B, CONFIRMED 2026-09-03).
    🔍 The claim is about the **derivative**: B0 is more capable *and* more
    exploitable. ⛔ It still wins by 11.9 pp at J3B.
-   ☠️ **Carries an unresolved confound**: the gap tracks **chain length**
-   perfectly across all four policies (B0 2.13 hops, learned 1.1–1.2), and
+   📏 It is a **dose–response**, not one pair: `repair_amplitude_m` 0 → 200 m
+   moves the gap **7.94 → 13.24 pp** with disjoint endpoints, while the loop's
+   *target* is a null (13.37 clearance against 13.24 capacity) —
+   [`results/repair_gates.md`](results/repair_gates.md).
+   ✅ **The declared confound was tested and refuted.** The gap tracks **chain
+   length** across all four policies (B0 2.13 hops, learned 1.1–1.2), and
    `min(C_i)/min(n, 3)` gives a longer chain both more links to jam and a bigger
-   division penalty. A per-hop normalisation **reverses** the headline. The
-   control (`capable_no_division`) is declared and **not yet run**.
+   division penalty. The `capable_no_division` control ran 2026-09-04: 📏 B0's gap
+   moves **13.24 → 12.85 pp** while every learned policy's collapses to
+   **0.44 – 5.46 pp**. ⚠️ Half the confound survives — *"a longer chain has more
+   links for the beam to find"* is not closed, and no policy here supplies the
+   hop-matched comparison that would close it.
    [`results/gate_b.md`](results/gate_b.md).
-2. **RQ2 — where does an adversary's power actually come from?**
+   **Supporting result — where an adversary's power comes from** (this was RQ2
+   until 2026-09-06; it justifies the ladder rather than standing alone):
    📏 5 seeds x 128 episodes, CUDA: **directionality −10.6 pp, adaptivity
    −2.9 pp** on B0. Power is overwhelmingly about *where the energy goes*, not
    about re-deciding where it goes. ⚠️ This **replaces** a non-monotonicity claim
    that came from one CPU seed and did **not** replicate: the ladder is monotone,
    J3B > J3 > J2, J3B beating J2 on **5/5** paired seeds.
    [`results/j_ladder.md`](results/j_ladder.md).
-3. **RQ3 — does adversarial co-training produce robustness or opponent-overfit?**
-   ✅ **Robustness, for the scripted rungs.** 📏 At J3B — never trained against —
-   `advtrain-J2` scores **31.8 %, beating `advtrain-J3B`'s 30.9 % on its own
-   training opponent**; the diagonal is not the best cell anywhere, and
-   adversarial training costs **+0.3 pp** on the clean rung. 🔧 Secondary
-   hypothesis: a *committed* adversary is a better teacher than a re-optimising
-   one — one measurement, two rungs. ⛔ J4 is still **not built**.
-4. **RQ4 — does it survive the airframe?** ONNX → TensorRT on a Jetson Orin
-   Nano. Latency, p99 jitter, power — and *does quantisation degrade
-   coordination more than control?* Gate C. 🔧 Pure Python.
+   ⚠️ **Open**: replicating the dose–response in a second, minimal abstract relay
+   environment. Scripted controllers, **no training**.
+2. **RQ2 — can adversarial co-training remove the cost without losing
+   capability?** ✅ **Robustness, for the scripted rungs.** 📏 At J3B — never
+   trained against — `advtrain-J2` scores **31.8 %, beating `advtrain-J3B`'s
+   30.9 % on its own training opponent**; the diagonal is not the best cell
+   anywhere, and adversarial training costs **+0.3 pp** on the clean rung.
+   🔧 Secondary hypothesis: a *committed* adversary is a better teacher than a
+   re-optimising one — one measurement, two rungs. ⚠️ **The mechanism is
+   untested**: the candidate is path redundancy — a second threshold-clearing,
+   edge-disjoint path — and **no metric for it exists**. ⛔ J4 is still **not
+   built**.
+3. **RQ3 — does it survive deployment?** ONNX → TensorRT on a Jetson Orin
+   Nano. Latency, p99 jitter, power against the 400 ms control period — and *does
+   quantisation degrade coordination more than control?* Gate C, declared and
+   reproduced verbatim. 🔧 Pure Python.
+
+🔒 **The capability programme is an instrument, not a research question**
+(`PLAN.md` §3). Every learned policy sits within **1.1 Mbps of the 15 Mbps
+threshold**, where the adversary's *damage* term dominates and no behavioural
+response is measured — so a capable learned policy is a **prerequisite for testing
+RQ1 on learned controllers**, and nothing more. 🔒 **The thesis does not depend on
+it**: RQ1's evidence is a *scripted* controlled pair, and 🔒 **Gates D–F are
+budgeted at three weeks**, after which writing begins regardless of outcome.
+
+⚠️ **`results/` predates this renumbering and is never edited.** A file there that
+says "RQ3" for co-training means what `PLAN.md` §2 now calls **RQ2**, and
+`results/rq2_ladder.md` keeps the predecessor's numbering entirely — its "RQ2" is
+the **architecture ladder**. Read the question, not the number.
 
 ⚠️ **The velocity action space is no longer a contribution.** Gate A resolved
 against it: 📏 the speed-cap pathology vanished (26.1 % → 0.4 %) and boundary
@@ -181,7 +219,8 @@ probe did not.
 
 | File | Read it when |
 |---|---|
-| [`PLAN.md`](PLAN.md) | **start here** — the claim, the phases, the gates declared before the runs |
+| [`PLAN.md`](PLAN.md) | **start here** — the claim, the three RQs, the phases, the gates declared before the runs |
+| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | **before writing any of it down** — one definition each for adaptation, loop amplitude, loop target, exploitability, damage, exploitation, off-diagonal, dose–response, disjoint |
 | [`docs/REDUCTION.md`](docs/REDUCTION.md) | **second** — what was carried over that still has to come out, in order |
 | [`docs/INHERITED.md`](docs/INHERITED.md) | quoting any constant. Every measured number that carries forward, with provenance |
 | [`docs/inherited/DECISIONS.md`](docs/inherited/DECISIONS.md) | before proposing anything — every entry was proposed then killed on evidence |
