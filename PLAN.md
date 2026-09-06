@@ -139,9 +139,16 @@ unretired.**
 
 ## 3. The capability question — re-opened, on named grounds
 
-⚠️ **This section said "closed. Do not re-open." until 2026-09-04.** It is
-re-opened, and the honest thing is to be exact about *what* changed, because four
-of the five lines below are untouched.
+⚠️ **This section said "closed. Do not re-open." until 2026-09-04.** It was
+re-opened on a named confound in the optimiser, and ⭐ **on 2026-09-06 that
+confound was measured and refuted** — see below. Four of the five lines were
+untouched throughout; the fifth is now restored.
+
+🔍 **The re-opening was still worth it.** It converted *"nobody checked"* into
+*"checked, and it is not the explanation"*, which is what §3 needed to be able to
+say. And it leaves the search pointed exactly where
+[`credit_assignment.md`](results/credit_assignment.md) pointed it: **the return
+and the advantage**, not the optimiser.
 
 ### 📏 What changed: the optimisation budget was frozen and never examined
 
@@ -159,12 +166,36 @@ rate."* So at the `deep` cadence a 12 M-step run is
 on a **137 k-parameter** actor. 📏 `runs/val-gnn-deep-s*/log.jsonl` confirms the
 consequence: `approx_kl` sits at **0.002 – 0.004** for whole runs against PPO's
 usual 0.01 – 0.02 — about **0.14 nats of total policy movement, end to end**. And
-`grad_kept`, instrumented for the joint-clip question `BLOCK_G` lists as open, is
-**NaN in every log in `runs/`**: first reading is **0.20 – 0.26**, so three
-quarters of what remains is discarded by the norm clip.
+`grad_kept`, instrumented for the joint-clip question `BLOCK_G` lists as open, was
+**NaN in every log in `runs/`**.
 
-☠️ **Every number in `results/` was measured under that budget.** That does not
-make any of them wrong. It means they share one uncontrolled variable.
+⚠️ **A claim made here on 2026-09-04 and CORRECTED 2026-09-06.** This paragraph
+read *"three quarters of what remains is discarded by the norm clip"*, from a
+120 k-step **MPS smoke run at 128 envs**. 📏 On a real CUDA run at 4096 envs,
+`grad_kept` is **0.54 – 0.91** and `grad_norm_actor` is **0.032 – 0.060** against
+a 0.5 clip — the actor's gradient never reaches the clip at all, and the
+throttling costs ~1.1–1.8x, not ~4x. A toy-config number was quoted as though it
+described the condition under study. 🔒 The `approx_kl` figure is independent and
+reproduces at **0.0021 – 0.0028**.
+
+☠️ **Every number in `results/` was measured under that budget** — which is why
+Gate D was run first, and ⭐ **Gate D answered it.**
+
+### ✅ 2026-09-06: the confound was tested, and it is not the explanation
+
+📏 [`capability_gates.md`](results/capability_gates.md), 2 × 4 factorial, 3 seeds,
+train split:
+
+| | result |
+|---|---|
+| **λ** ∈ {0.95, 0.98, 0.99, 0.995} | ⛔ **null to harmful.** The shipped 0.95 wins on the worst seed (44.28 %); 0.995 falls to 36.13 % |
+| **10x the optimisation budget** | ☠️ **−32 pp.** 13.10 % against the control's 45.18 %, with a final policy indistinguishable from random on `hop_mean`, `observer_tenure` and `episode_return` |
+
+🔒 **So "the policy cannot move" is not the binding constraint.** It was given 10x
+the gradient steps and 17x the learning rate, it moved (`approx_kl` 0.0027 →
+0.0107, `lr_actor` plateauing at 5.13e-3), and it got **worse**. ⛔ My own
+prediction was the opposite, and it is recorded as refuted rather than quietly
+dropped.
 
 ### 🔒 What that does, and does NOT do, to the five lines
 
@@ -172,7 +203,7 @@ make any of them wrong. It means they share one uncontrolled variable.
 |---|---|---|
 | 1 | the gap is **`observed` and nothing else** — conditioned on a sightline the GNN converts it as well as B0, 0.620 vs 0.617 | ✅ **stands.** It is a *description* of the gap, not a closure of it — and it is the target |
 | 2 | **B0 wins the reward too**, 222.9 vs 85.8, and return rank-correlates with `mission_capable` at **ρ = 0.987** | ✅ **stands.** The objective is not misspecified, whatever the optimiser did |
-| 3 | **eight pre-declared interventions, eight nulls** | ☠️ **confounded.** All eight were measured at ~5,900 Adam steps with `grad_kept` ~0.24. Not refuted — confounded, identically |
+| 3 | **eight pre-declared interventions, eight nulls** | ✅ **RESTORED 2026-09-06.** Raised as confounded on 2026-09-04 — all eight measured at ~5,900 Adam steps. ⭐ Gate D tested that confound directly and it went the *other* way: 10x the budget costs 32 pp. The eight nulls stand, and now stand **tested** rather than merely un-examined |
 | 4 | **structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** | ✅ **stands, exactly.** Team terms cancel *by construction*; no optimisation changes that. ⭐ And it **names its own successor**: *"What is left is the critic and the advantage, none of which has been touched"* |
 | 5 | **not memory either**: perfect target state is worth **−0.4 pp** | ⚠️ **stands as a bound on TARGET memory, for B0.** [`memory_horizon.md`](results/memory_horizon.md) itself leaves **role-commitment** memory open |
 

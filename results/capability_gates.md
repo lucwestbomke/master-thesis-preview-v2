@@ -58,11 +58,19 @@ on a **137 k-parameter** actor. 📏 And `runs/val-gnn-deep-s*/log.jsonl` record
 `approx_kl` at **0.002 – 0.004** for entire runs, against PPO's usual 0.01 – 0.02:
 total policy movement is ≈ 46 × 0.003 ≈ **0.14 nats of KL, end to end.**
 
-📏 **And three quarters of what remains is discarded.** `grad_kept` was
-instrumented for the joint-clip question `BLOCK_G` lists as open and is **NaN in
-every log in `runs/`** — it has never been read. First reading, on a 120 k-step
-MPS smoke run at the shipped clip: **0.20 – 0.26**, with `grad_norm_actor`
-1.8 – 2.4 against `grad_norm_clip = 0.5`.
+⚠️ **`grad_kept` — a claim made here on 2026-09-04 and CORRECTED 2026-09-06.**
+It was instrumented for the joint-clip question `BLOCK_G` lists as open and was
+**NaN in every log in `runs/`**. This section originally read *"three quarters of
+what remains is discarded"*, from a **120 k-step MPS smoke run at 128 envs**:
+`grad_kept` 0.20–0.26, `grad_norm_actor` 1.8–2.4.
+
+📏 **That does not hold on a real run.** `runs/gateD-shipped/sw-gae_lambda0p95-s0`,
+CUDA, 4096 envs, 12 M steps: `grad_kept` **0.54 – 0.91** and `grad_norm_actor`
+**0.032 – 0.060** — more than 8x below the 0.5 clip. The actor's own gradient
+never reaches the clip; the throttling is the *critic* dominating the joint norm,
+and it costs a factor of ~1.1–1.8, not ~4. ⛔ A toy-config number was quoted as
+though it described the condition under study. The `approx_kl` figure is
+unaffected and independently reproduced at **0.0021 – 0.0028** on the same run.
 
 ☠️ **Every number in `results/`** — the 81-run sweep, the RQ2 ladder, Gate A,
 Φ v2, all eight interventions, the GNN row of `credit_assignment.md` — **was
@@ -242,11 +250,36 @@ amended two-sided precondition **[0.005, 0.05]** is **met**: the arm is a valid
 regression, not void. ⚠️ I proposed voiding it on a mechanism the data does not
 support, and the amendment stands on its own merits rather than as a way out.
 
-📏 **What actually happened: it learned better, then forgot.** `capable` peaks at
-**0.536 at progress 0.306** — and `at_boundary` runs **0.015–0.058** against the
-shipped runs' 0.04–0.22, so the budget arm *fixes* the boundary pathology. Then it
-decays monotonically to a final policy that is, on every structural metric,
-**indistinguishable from random**:
+⚠️ **CORRECTED 2026-09-06, once the shipped arm's curve existed.** This section
+first read *"it learned better, then forgot"* and *"the budget arm fixes the
+boundary pathology"*. 📏 Both are wrong, and both came from comparing against the
+`gnn` runs in `runs/val-gnn-deep-s*` rather than against the `deepsets` control
+that was sitting in the same sweep:
+
+| progress | curriculum focus | shipped | budget | leads |
+|---|---|---|---|---|
+| 0.044 | stage 1 | 0.348 | 0.371 | budget |
+| 0.175 | stage 2 | 0.507 | 0.502 | tie |
+| 0.306 | stage 2 | **0.636** | 0.536 | shipped |
+| 0.437 | stage 3 | 0.520 | 0.399 | shipped |
+| 0.699 | stage 4 | 0.465 | 0.287 | shipped |
+| 0.961 | stage 4 | 0.482 | 0.240 | shipped |
+
+⛔ **The budget arm never learns better.** It leads only at progress 0.044, ties at
+0.175, and is behind from 0.306 to the end. And `at_boundary` is 0.059 → 0.067 on
+the *shipped* arm against 0.047 → 0.058 on the budget arm — essentially the same,
+so nothing was "fixed".
+
+🔍 **And the peak-then-decay shape is largely the CURRICULUM, not forgetting.**
+Both arms peak at progress 0.306–0.350, which is exactly where the focus is
+**stage 2** — half speed, **no jammer**, exact cue. The metric falls when the task
+gets harder. In the window where the task mix is constant (progress ≥ 0.60,
+stage-4 focus) the shipped arm reads 0.465 / 0.374 / 0.482 against a final eval of
+0.452, and the budget arm 0.287 / 0.147 / 0.240 against 0.131. ⚠️ Three log points
+per window cannot establish a trend either way, which is what Gate G is for.
+
+📏 **What is solid**: the budget arm's final policy is, on every structural
+metric, **indistinguishable from random**:
 
 | | budget λ=0.95 | shipped λ=0.95 | random |
 |---|---|---|---|
@@ -610,12 +643,17 @@ one generalisation check this project has left into a validation set.
 
 ### Conditions
 
-Two configurations, 3 seeds each, `--checkpoint-every --log-lines 8`:
+⚠️ **Amended 2026-09-06, before running, on evidence and to cut cost.** 📏 The
+shipped arm's training peak sits at progress 0.350 — exactly the stage-2 focus,
+which has **no jammer**, half speed and an exact cue. So the peak is measured on
+an easier task and the prediction for the shipped arm is **NULL**. It is still
+worth confirming, because it bears on every learned number in `results/`, but it
+does not deserve its own runs.
 
-* **shipped** — defaults (λ = 0.95). ⭐ This is the arm that matters: if it holds
-  here, the reporting protocol for the whole project changes.
-* **budget** — Gate D arm 2's flags, unchanged. Tests whether its collapse is
-  retention rather than learning.
+🔒 **So Gate G rides along on Gate E's runs.** `sweep.py --train-arg
+checkpoint-every` saves the checkpoints at no training cost; only the *scoring*
+is extra, and it happens after Gate E has its answer. ⛔ If Gate E is never run,
+Gate G needs its own 3 seeds of the shipped configuration.
 
 ### 🔒 The decision rule
 
