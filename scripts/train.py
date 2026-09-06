@@ -360,6 +360,19 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tag", default=None, help="run directory prefix under --out-root")
     ap.add_argument("--out-root", type=Path, default=Path("runs"))
     ap.add_argument("--log-lines", type=int, default=20)
+    ap.add_argument(
+        "--checkpoint-every",
+        action="store_true",
+        help="also save a checkpoint at every log line, as checkpoint-pNNN.pt where "
+        "NNN is percent progress. ⛔ Off by default -- the FINAL checkpoint.pt is "
+        "written either way and is what every existing number was scored on. "
+        "☠️ Motivation: every training curve on record peaks partway through and "
+        "decays (5/5 val-gnn seeds; Gate D's budget arm peaked at capable 0.536 at "
+        "progress 0.306 and finished near random), and no mid-run checkpoint has "
+        "ever been scored because none was ever saved. ⚠️ A training-log peak is "
+        "not an eval score -- stochastic actions, curriculum mix -- so these must "
+        "go through scripts/eval_policy.py like anything else",
+    )
 
     phi = ap.add_argument_group(
         "Phi (PBRS-safe, optimum-preserving)",
@@ -544,6 +557,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "value_clip": a.value_clip,
         "init_from": init_from,
         "obs_history": a.obs_history,
+        "checkpoint_every": a.checkpoint_every,
         "mask_jammed_obs": a.mask_jammed_obs,
         "mask_broadcast_obs": a.mask_broadcast_obs,
         "cue_mode": a.cue_mode,
@@ -567,6 +581,24 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
             handle.write(json.dumps(row) + "\n")
             handle.flush()
             print("    " + "".join(f"{row.get(k, float('nan')):>14.4g}" for k in WATCH))
+            if a.checkpoint_every:
+                # ☠️ **Every policy in this project has been scored at its FINAL
+                # state**, and every training curve on record peaks partway
+                # through and decays: 5/5 `runs/val-gnn-deep-s*` seeds, and
+                # `results/capability_gates.md`'s Gate D budget arm peaked at
+                # `capable` 0.536 (progress 0.306) and finished near random.
+                # Nobody has ever scored a mid-run checkpoint, because there has
+                # never been one to score.
+                #
+                # ⚠️ A training-log peak is NOT an eval score -- it is measured
+                # on stochastic actions and a curriculum MIX, so a peak at
+                # progress 0.31 sits on stage 2 (speed 0.5, no jammer) while eval
+                # is stage 4 / F4 / J1 on the deterministic mean. That is exactly
+                # why the checkpoints have to be scored through `evaluate.py`
+                # rather than read off the curve.
+                pct = round(row["progress"] * 100)
+                snap = out / f"checkpoint-p{pct:03d}.pt"
+                trainer.save(snap, extra={"provenance": provenance})
 
         started = time.perf_counter()
         trainer.train(a.timesteps, on_log=on_log, log_lines=a.log_lines)

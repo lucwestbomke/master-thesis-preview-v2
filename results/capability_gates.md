@@ -210,43 +210,56 @@ pay **only under the larger budget** is exactly the interaction the 2 × 4 was
 built to test, and it is still open — arm 2 has to be repaired before it can
 answer.
 
-#### ☠️ Arm 2 — the budget bundle collapsed, and the arm is not interpretable
+#### 📏 Arm 2 — REGRESSION, as declared. And the diagnosis I gave was wrong.
 
-| λ | worst | median |
-|---|---|---|
-| 0.95 | **13.08 %** | 13.10 % |
-| 0.98 | 9.22 % | 12.80 % |
+| λ | worst | median | per seed |
+|---|---|---|---|
+| 0.95 | 13.08 % | 13.10 % | 16.7 · 13.1 · 13.1 |
+| 0.98 | 9.22 % | 12.80 % | 15.7 · 9.2 · 12.8 |
+| 0.99 | 12.19 % | 15.09 % | 15.1 · 12.2 · 16.1 |
+| 0.995 | 4.80 % | 9.15 % | 11.0 · 9.1 · 4.8 |
 
-📏 Against **random's 10.7 %**. This is not a regression, it is a **collapse**:
-the policy is at or below chance. ⛔ Reading it through the REGRESSION branch
-(*"more optimisation makes it worse, which points at the objective"*) would be
-wrong, because the treatment is not a valid instantiation of *"more
-optimisation"* — it is five knobs at once, at least one of which is misbehaving.
+🔒 **Δ = −32 pp against the control. That is the REGRESSION branch**, and its rule
+reads: *"more optimisation makes it worse… Report as such; do **not** rescue it by
+re-tuning."* Recorded as declared.
 
-☠️ **And my validity precondition was ONE-SIDED, which is a defect in the
-declaration.** It voids the arm if `approx_kl` fails to reach 0.008, but says
-nothing about it running *away*. A diverged policy is exactly as uninformative as
-a frozen one. 🔒 Recorded as a defect rather than used as an escape hatch:
-`AGENTS.md` requires the rule to be declared before the run, and the fix is to
-state the two-sided precondition **now, before the repaired arm runs**, not to
-decide afterwards which reading is convenient.
+☠️ **My named prime suspect was wrong and the log refutes it.**
+`runs/gateD-budget/sw-gae_lambda0p95__7a3bf4-s0`:
 
-🔒 **Amended precondition, declared before the repaired arm:** the treatment is
-**VOID** unless median `approx_kl` over the run lies in **[0.005, 0.05]**. Below
-it the policy cannot move; above it PPO's trust region is not being respected and
-whatever is measured is not the condition named.
+| progress | capable | lr_actor | approx_kl | grad_kept | expl_var | at_boundary |
+|---|---|---|---|---|---|---|
+| 0.044 | 0.371 | 3.75e-04 | 0.0027 | 1.00 | 0.081 | 0.047 |
+| 0.175 | 0.502 | 4.27e-03 | 0.0078 | 1.00 | 0.534 | 0.025 |
+| **0.306** | **0.536** | 5.13e-03 | 0.0092 | 1.00 | 0.670 | 0.015 |
+| 0.437 | 0.399 | 5.13e-03 | 0.0095 | 1.00 | 0.813 | 0.017 |
+| 0.699 | 0.287 | 5.13e-03 | 0.0099 | 0.98 | 0.913 | 0.028 |
+| 0.961 | 0.240 | 5.13e-03 | 0.0107 | 0.95 | 0.947 | 0.058 |
 
-⚠️ **Prime suspect, to be confirmed from the logs rather than assumed:** the
-`--target-kl` controller in `ppo.py::_adapt_learning_rate` raises the LR by 1.5x
-per round whenever the round's **mean** KL is under half the target — and the mean
-is taken over every minibatch of every epoch, including epoch 0 where the ratio is
-1 and the KL is ~0 **by construction**. That biases the controller upward, and
-`lr_max` is 1e-2, 33x the starting 3e-4. `scripts/inspect_run.py` reads
-`lr_actor` and `approx_kl` straight out of `log.jsonl`.
+⛔ **The LR did not run away.** It rose to **5.13e-3** and *plateaued* there — half
+of `lr_max` — holding `approx_kl` in **[0.0027, 0.0107]** against a 0.015 target.
+The controller's dead band (`target/2` to `2*target`) is what held it. 🔒 So the
+amended two-sided precondition **[0.005, 0.05]** is **met**: the arm is a valid
+regression, not void. ⚠️ I proposed voiding it on a mechanism the data does not
+support, and the amendment stands on its own merits rather than as a way out.
 
-⛔ **Not yet attributed.** Four other knobs moved at the same time, and
-`--grad-norm-clip-critic 1.0` alone gives the actor ~4x more gradient per step
-(📏 `grad_kept` 0.24 → ~0.9 measured on the smoke runs) on top of 10x more steps.
+📏 **What actually happened: it learned better, then forgot.** `capable` peaks at
+**0.536 at progress 0.306** — and `at_boundary` runs **0.015–0.058** against the
+shipped runs' 0.04–0.22, so the budget arm *fixes* the boundary pathology. Then it
+decays monotonically to a final policy that is, on every structural metric,
+**indistinguishable from random**:
+
+| | budget λ=0.95 | shipped λ=0.95 | random |
+|---|---|---|---|
+| `mission_capable` | 13.1 % | 45.2 % | 10.7 % |
+| `observed` | 26.4 % | 64.7 % | 21.9 % |
+| `hop_mean` | **0.38** | 1.28 | 0.41 |
+| `observer_tenure` | 15.7 | 45.4 | 16.3 |
+| `episode_return` | **−147** | +116 | — |
+
+⛔ **Not attributed.** Five knobs moved together; the training curve says the
+failure is in *retention*, not in *learning*, but which knob destroys retention is
+untested. 🔒 The declared rule forbids re-tuning this arm, and that is honoured:
+the follow-up below is a **different question**, declared before its own run.
 
 ---
 
@@ -552,6 +565,78 @@ uv run python scripts/sweep.py --axis gae_lambda=<winner> --seeds 0 1 2 \
 interrupted-and-resumed sweep that appended rows unconditionally and reported
 `n = 9` where 5 were asked for. And ⛔ a cell whose training failed is written
 with `"status": "failed"` and excluded from ranking; check for those first.
+
+---
+
+## Gate G — is the FINAL checkpoint the right one to score? Declared 2026-09-06
+
+🔒 **A new question, not a re-run of Gate D.** Gate D's REGRESSION branch forbids
+rescuing its treatment by re-tuning, and this does not: it asks nothing about the
+budget bundle. It asks whether **every number in `results/` was read at the wrong
+point**, and it applies to the shipped configuration exactly as much as to the
+budget one.
+
+### ☠️ Why it exists
+
+📏 [`scripts/train.py`](../scripts/train.py) saves **one** checkpoint, after the
+last round. Every learned number this project has ever reported is the *final*
+state of a run. And every training curve on record peaks partway through and
+decays:
+
+| run | peak `capable` (progress) | final |
+|---|---|---|
+| `val-gnn-deep-s0` | 0.453 (0.197) | 0.156 |
+| `val-gnn-deep-s1` | 0.526 (0.328) | 0.454 |
+| `val-gnn-deep-s2` | 0.560 (0.328) | 0.398 |
+| `val-gnn-deep-s3` | 0.491 (0.197) | 0.335 |
+| `val-gnn-deep-s4` | 0.628 (0.328) | 0.455 |
+| Gate D budget λ=0.95 s0 | **0.536 (0.306)** | 0.172 |
+
+**6 of 6.** ⛔ No mid-run checkpoint has ever been scored, because none was ever
+saved. `--checkpoint-every` now saves one per log line.
+
+### ⚠️ The trap this gate must not fall into
+
+⛔ **A training-log peak is not an eval score.** It is measured on *stochastic*
+actions and a *curriculum mix*, so a peak at progress 0.31 sits on stage 2
+(speed 0.5, no jammer) while eval is stage 4 / F4 / J1 on the deterministic mean.
+The curve cannot answer this; only `evaluate.py` can.
+
+⛔ **And picking the best checkpoint on the eval split is selection on the test
+set.** 🔒 So the protocol is fixed here, before the run: **select the checkpoint on
+the TRAIN split, report that one checkpoint on eval.** The eval number is then an
+honest estimate of a decision made without it. Anything else quietly converts the
+one generalisation check this project has left into a validation set.
+
+### Conditions
+
+Two configurations, 3 seeds each, `--checkpoint-every --log-lines 8`:
+
+* **shipped** — defaults (λ = 0.95). ⭐ This is the arm that matters: if it holds
+  here, the reporting protocol for the whole project changes.
+* **budget** — Gate D arm 2's flags, unchanged. Tests whether its collapse is
+  retention rather than learning.
+
+### 🔒 The decision rule
+
+`Δ = (best mid-run checkpoint, selected on TRAIN) − (final checkpoint)`, both
+scored on **eval**, median over 3 seeds. ⚠️ Branches partition the real line.
+
+| branch | rule | consequence |
+|---|---|---|
+| ✅ **CONFIRMED** | `Δ_shipped ≥ +3 pp` | ☠️ **Every learned number in `results/` is an under-report.** The reporting protocol changes to train-selected checkpoints, and the RQ2 ladder, Gate A, Φ v2 and the eight nulls each need re-reading |
+| ⚠️ **BUDGET-ONLY** | `Δ_shipped < +3 pp` **and** `Δ_budget ≥ +3 pp` | Gate D's arm 2 failed at *retention*, not at learning. ⛔ Still does not un-do Gate D's REGRESSION — it reframes it, and any budget arm returns under a **new** gate with a retention fix |
+| ⛔ **NULL** | both `< +3 pp` | The decay is a curriculum-mix artefact of the training log. Scoring the final checkpoint is correct, and this closes a question that has been open by accident since the project began |
+
+### 📏 Cost
+
+6 runs (~30 min training) plus ~48 checkpoint evaluations. ⚠️ Score the **train**
+split first to select, then the eval split **once**, on the selected checkpoint
+only.
+
+### Result
+
+⛔ **Not yet run.**
 
 ---
 
