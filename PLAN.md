@@ -4,11 +4,13 @@
 framings before this one are recorded in §6, because a claim that was refuted is
 part of the evidence for the one that replaced it.
 
-⚠️ **Amended the same day.** §3 said *"closed, do not re-open"* and now says
-*"re-opened, on named grounds"* — a **measured confound in the optimiser** that
-every number in `results/` shares. 🔒 Four of its five lines are untouched and
-§3 says which. The amendment is recorded here rather than made silently, for the
-same reason §6 keeps the refuted framings.
+⚠️ **Amended 2026-09-04, and resolved 2026-09-06.** §3 said *"closed, do not
+re-open"*, was re-opened on a **measured confound in the optimiser** that every
+number in `results/` shares, and that confound was then tested and went the other
+way. ⛔ Both the amendment and its resolution are recorded rather than made
+silently, for the same reason §6 keeps the refuted framings — and the full record
+now lives in [`docs/HISTORY.md`](docs/HISTORY.md), split out on 2026-09-06 so this
+file can say what happens next.
 
 ⭐ **Restructured 2026-09-06.** Four objectives became **three research
 questions**: the old RQ2 (*where does an adversary's power come from*) is folded
@@ -243,108 +245,34 @@ over a **12x** weight range sitting inside a single cell's seed noise. 🔒 The 
 is a *budget*, not a schedule: what it has left is **F** and anything the
 programme proposes after it.
 
-⛔ **The retitling does not soften the re-opening.** ⚠️ **This section said
-"closed. Do not re-open." until 2026-09-04.** It was re-opened on a named
-confound in the optimiser, and ⭐ **on 2026-09-06 that confound was measured and
-refuted** — see below. Four of the five lines were untouched throughout; the
-fifth is now restored.
+⛔ **The retitling does not soften the re-opening**, and the re-opening is
+correct. 🔒 §3 was titled *"the capability question"* and said *"closed. Do not
+re-open."* until 2026-09-04; it was re-opened on a **named, measured confound in
+the optimiser**, that confound was tested on 2026-09-06, and it went the *other*
+way. The full record — the re-opening, the arithmetic, the correction of a claim
+made during it, Gate D's verdict, the five lines with their statuses, and Gate E —
+is in [`docs/HISTORY.md`](docs/HISTORY.md). ⛔ **Nothing was deleted**; it moved,
+verbatim, so that this file can say what happens next.
 
-🔍 **The re-opening was still worth it.** It converted *"nobody checked"* into
-*"checked, and it is not the explanation"*, which is what §3 needed to be able to
-say. And it leaves the search pointed exactly where
-[`credit_assignment.md`](results/credit_assignment.md) pointed it: **the return
-and the advantage**, not the optimiser.
+### 📏 Where the search stands, in three lines
 
-### 📏 What changed: the optimisation budget was frozen and never examined
-
-[`docs/inherited/BLOCK_G.md`](docs/inherited/BLOCK_G.md) built three cadences
-holding *"gradient density constant at 488 optimizer steps per M env-steps"*, and
-recorded — without following it up — that this pins **the minibatch at 40,960
-rows in all three**. It also states *"⛔ Not swept, deliberately: the learning
-rate."* So at the `deep` cadence a 12 M-step run is
-
-```
-12e6 / (4096 * 64)               =     46 PPO updates
-46 * 4 epochs * 32 mini-batches  =  5,888 Adam steps, total
-```
-
-on a **137 k-parameter** actor. 📏 `runs/val-gnn-deep-s*/log.jsonl` confirms the
-consequence: `approx_kl` sits at **0.002 – 0.004** for whole runs against PPO's
-usual 0.01 – 0.02 — about **0.14 nats of total policy movement, end to end**. And
-`grad_kept`, instrumented for the joint-clip question `BLOCK_G` lists as open, was
-**NaN in every log in `runs/`**.
-
-⚠️ **A claim made here on 2026-09-04 and CORRECTED 2026-09-06.** This paragraph
-read *"three quarters of what remains is discarded by the norm clip"*, from a
-120 k-step **MPS smoke run at 128 envs**. 📏 On a real CUDA run at 4096 envs,
-`grad_kept` is **0.54 – 0.91** and `grad_norm_actor` is **0.032 – 0.060** against
-a 0.5 clip — the actor's gradient never reaches the clip at all, and the
-throttling costs ~1.1–1.8x, not ~4x. A toy-config number was quoted as though it
-described the condition under study. 🔒 The `approx_kl` figure is independent and
-reproduces at **0.0021 – 0.0028**.
-
-☠️ **Every number in `results/` was measured under that budget** — which is why
-Gate D was run first, and ⭐ **Gate D answered it.**
-
-### ✅ 2026-09-06: the confound was tested, and it is not the explanation
-
-📏 [`capability_gates.md`](results/capability_gates.md), 2 × 4 factorial, 3 seeds,
-train split:
-
-| | result |
+| | status |
 |---|---|
-| **λ** ∈ {0.95, 0.98, 0.99, 0.995} | ⛔ **null to harmful.** The shipped 0.95 wins on the worst seed (44.28 %); 0.995 falls to 36.13 % |
-| **10x the optimisation budget** | ☠️ **−32 pp.** 13.10 % against the control's 45.18 %, with a final policy indistinguishable from random on `hop_mean`, `observer_tenure` and `episode_return` |
+| **the optimiser** | ⛔ **closed.** Gate D: λ null-to-harmful, and 10x the gradient budget costs **32 pp**. *"The policy cannot move"* is not the binding constraint |
+| **the advantage** | ⛔ **closed.** Gate E supplied the per-drone credit `credit_assignment.md` measured as absent — **35.5 %** differentiable share against a **0.04–0.16 %** control class — and `role_entropy` (0.492 → 0.603) and `observer_range_m` (192.8 → 211.7 m) got **worse** |
+| **the observation and the curriculum** | ⭐ **open, and now the leading hypothesis.** Gate F. See §5 |
 
-🔒 **So "the policy cannot move" is not the binding constraint.** It was given 10x
-the gradient steps and 17x the learning rate, it moved (`approx_kl` 0.0027 →
-0.0107, `lr_actor` plateauing at 5.13e-3), and it got **worse**. ⛔ My own
-prediction was the opposite, and it is recorded as refuted rather than quietly
-dropped.
+🔒 **What survives from the five lines is line 1, and it is the target**: the gap
+is `observed` and nothing else — conditioned on a sightline the GNN converts it as
+well as B0, **0.620 against 0.617**. All five lines, with their statuses, are in
+[`HISTORY.md`](docs/HISTORY.md).
 
-### 🔒 What that does, and does NOT do, to the five lines
-
-| | line | status |
-|---|---|---|
-| 1 | the gap is **`observed` and nothing else** — conditioned on a sightline the GNN converts it as well as B0, 0.620 vs 0.617 | ✅ **stands.** It is a *description* of the gap, not a closure of it — and it is the target |
-| 2 | **B0 wins the reward too**, 222.9 vs 85.8, and return rank-correlates with `mission_capable` at **ρ = 0.987** | ✅ **stands.** The objective is not misspecified, whatever the optimiser did |
-| 3 | **eight pre-declared interventions, eight nulls** | ✅ **RESTORED 2026-09-06.** Raised as confounded on 2026-09-04 — all eight measured at ~5,900 Adam steps. ⭐ Gate D tested that confound directly and it went the *other* way: 10x the budget costs 32 pp. The eight nulls stand, and now stand **tested** rather than merely un-examined |
-| 4 | **structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** | ✅ **stands, exactly.** Team terms cancel *by construction*; no optimisation changes that. ⭐ And it **names its own successor**: *"What is left is the critic and the advantage, none of which has been touched"* |
-| 5 | **not memory either**: perfect target state is worth **−0.4 pp** | ⚠️ **stands as a bound on TARGET memory, for B0.** [`memory_horizon.md`](results/memory_horizon.md) itself leaves **role-commitment** memory open |
-
-### ⭐ 2026-09-06: line 4's successor axis was tested too, and it is closed
-
-📏 Gate E supplied the per-drone credit `credit_assignment.md` measured as absent.
-`D_i = G(z) − G(z_{−i})` over **seven weights spanning 12x**: the whole capability
-axis sits inside a single cell's seed noise (2.68 pp against 4.23 pp), and
-`role_entropy` (0.492 → 0.603) and `observer_range_m` (192.8 → 211.7 m) get
-**worse**. 🔒 And it is not a signal-delivery failure: the differentiable share
-reaches **35.5 %** against a **0.04–0.16 %** control class, above the band
-`measure_credit.py` pre-declared as refuting its own mechanism.
-
-☠️ **So *"the advantage cannot tell one drone from another"* is true, and is not
-the reason the swarm fails to differentiate.** Supplying the signal makes role
-differentiation *worse*. Line 4 stands as a measurement and falls as an
-explanation.
-
-🔍 **Line 4 was still the argument for running Gate E.** It says
-no *shaping* knob can move role credit, and points at the return. That is exactly
-what §7's Gate E changes, and it is why the instrument is a difference reward
-rather than a ninth weight.
-
-### 🔒 And §1 requires this
-
-⚠️ §1 already says, in its own words: *"the learned policies in this project
-cannot test the loop claim. Doing that needs a policy with real capacity headroom
-— i.e. a genuinely capable one."* Every learned policy here sits within
-**1.1 Mbps of the 15 Mbps threshold**, where the jammer's damage term dominates
-and no behavioural response is being measured at all.
-
-⭐ **So a capable learned policy is a prerequisite for RQ1, not a distraction from
-it.** The old instruction — *"do not re-open §3 to rescue §1"* — was right about
-the failure mode it feared (fitting §3 to save a claim) and wrong about the
-remedy. §3 is re-opened on a **named, measured confound in the optimiser**, with
-gates declared before the runs, and §1 is untouched by the outcome either way.
+🔒 **Re-opening this section again needs a NEW mechanism and a gate declared
+before its run** — not another sweep of a knob. ⚠️ That rule is what
+`docs/HISTORY.md` exists to enforce: ten pre-declared interventions have now
+failed to move `observer_range_m` (**187–212 m** against B0's **90**),
+`observer_tenure` (**40–47** against **295**) or `role_entropy` (**0.49–0.60**
+against **0.062**).
 
 ### 📏 What has NOT changed
 
@@ -352,7 +280,8 @@ gates declared before the runs, and §1 is untouched by the outcome either way.
 against the best learned 40.7 %. ⛔ **B0's design advantage is still ~10.3 pp**
 against a 15.0 pp gap ([`b0_ablation.md`](results/b0_ablation.md)), so acquiring
 every B0 component would still not close it — which is why Gates D–F attack the
-optimiser and the advantage rather than trying to clone the heuristic.
+optimiser, the advantage and the observation rather than trying to clone the
+heuristic.
 
 🔒 **The bar, in this project's own standard** (Gate A and the J-ladder both
 judge on disjoint seed ranges): *clears B0* is a median above **57.3 %**; *beats B0* is a
@@ -385,17 +314,21 @@ declared before the run and never edited afterwards.
 
 | gate | serves | question | verdict |
 |---|---|---|---|
-| **A** | control (closed) | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
+| **A** | method (closed) | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
 | **B** | **RQ1** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
 | **C** | **RQ3** | does quantisation hurt coordination more than control? | ⛔ **not run** |
 | **D** | the instrument | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **NULL / REGRESSION, 2026-09-06** — λ is null-to-harmful and 10x the budget costs **32 pp**. [`capability_gates.md`](results/capability_gates.md) |
 | **E** | the instrument | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **NULL, 2026-09-06** — 7 weights over a 12x range, whole axis inside single-cell noise; `role_entropy` and `observer_range_m` get **worse**. ⭐ And the signal *reached the gradient*: 35.5 % differentiable share against a 0.04–0.16 % control class |
-| **F** | the instrument | is the **observation** lying to the policy? | ⛔ **not run** — same file, lowest prior |
-| Φ v2 | the instrument | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. §3 |
+| **F** | the instrument | is the **observation** lying to the policy, and is the **curriculum** teaching a shortcut? | ⭐ **not run — and now the LEADING hypothesis, 2026-09-06.** Promoted from lowest prior: D and E are null, and 📏 a one-line cue-follower scores **94 %** of B0 at stage 1 and **6.1 %** at stage 4, below random's 10.7 %. §7 |
+| **G** | the instrument | is the **final checkpoint** the right one to score? | ⛔ **not run** — declared 2026-09-06 in [`capability_gates.md`](results/capability_gates.md). ⚠️ It applies to the shipped configuration as much as to the budget one, so it is *not* a Gate D re-run |
+| **D2** | the instrument | is the −32 pp the **step count**, or the four knobs bundled with it? | ⛔ **not run** — declared below |
+| Φ v2 | the instrument | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. [`HISTORY.md`](docs/HISTORY.md) |
 | k = 2 | the instrument | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
 
-⚠️ **Gates D, E and F re-open §3.** Every branch of each is declared before its
-run and each partitions the outcome space — ⛔ Gate A and
+⚠️ **Gates D, E and F re-opened §3, and two of the three have resolved.** D is a
+NULL/REGRESSION and E is a NULL; **F is what is left**, and it is now the leading
+hypothesis rather than the lowest prior. Every branch of each is declared before
+its run and each partitions the outcome space — ⛔ Gate A and
 [`trainer_validation.md`](results/trainer_validation.md) *each* recorded a rule
 that did not, and that is now a standing requirement rather than a lesson.
 
@@ -417,14 +350,82 @@ Gate B's declaration, its two amendments and its verdict live in
 
 ---
 
+### Gate D2 — is the −32 pp the step count, or the four knobs bundled with it?
+
+🔒 **Declared 2026-09-06, before the run. Branches partition the real line.**
+
+⚠️ **Not a rescue, and no branch of it un-does Gate D.**
+[`capability_gates.md`](results/capability_gates.md)'s REGRESSION branch says
+*"do not rescue it by re-tuning"*, and this does not re-tune: it asks **which of
+five knobs** produced the collapse. 🔒 Same standing as Gate G, which is declared
+in that file on the same reasoning.
+
+📏 **Why it is owed.** Gate D's budget arm is
+`--mini-batch-size 4096 --target-kl 0.015 --grad-norm-clip-critic 1.0
+--orthogonal-init --min-log-std -1.6`, and the file declares it a **screening**
+arm: *"the budget arm bundles five knobs, and that is deliberate."* It scored
+**13.10 %** against the control's **45.18 %**. ⛔ The ablation was declared owed
+*"if it promotes"* — it regressed instead, so nothing was ever attributed, and the
+statement the project can currently support is **"that configuration is
+harmful"**, not **"more optimisation does not help."**
+
+⛔ **The learning rate was not one of the five.** `--target-kl 0.015` switches on
+the KL-adaptive controller in `src/training/ppo.py`; 📏 `lr_actor` rose to
+**5.13e-3** and *plateaued* at half of `lr_max`, holding `approx_kl` in
+**[0.0027, 0.0107]** against the **0.015** target. The controller's dead band
+held, and *"the `--target-kl` controller ran away"* is already recorded as
+**refuted** in that file's corrections log. ⚠️ So a clean arm does not need to
+pin the LR — it needs to **not set `--target-kl`**, and the actor LR then stays at
+the shipped constant by construction.
+
+| | rule |
+|---|---|
+| **treatment** | `--mini-batch-size 4096` **alone**. 📏 5,888 → ~58,900 Adam steps at essentially unchanged FLOPs |
+| **control** | the shipped defaults at the λ Gate D selected. A **re-run**, not a number quoted from another code state |
+| **judged on** | `Δ = median(treatment) − median(control)`, capability, train split, **5 seeds**, with the **worst seed** reported beside it |
+
+| branch | rule | consequence |
+|---|---|---|
+| ☠️ **REGRESSION REPRODUCED** | `Δ ≤ −5 pp` | The step count alone is harmful. ⭐ Gate D's verdict can then be stated **without** the bundle caveat, which is the point of running this |
+| ⚠️ **ATTRIBUTED ELSEWHERE** | `Δ ≥ +3 pp` | The collapse came from one of the other four. ⛔ Gate D's verdict narrows to *"that configuration is harmful"* and the four-knob ablation is owed before **any** claim about the budget. 🔧 `--min-log-std -1.6` is the one to drop first — it floors σ at `exp(−1.6) ≈ 0.20` against a shipped default of `−20.0`, i.e. no floor, so it is the only knob that prevents the policy sharpening at all |
+| ⛔ **NULL** | `−5 pp < Δ < +3 pp` | The step count neither helps nor hurts. *"The budget does not bind"* stands, and the −32 pp is attributed to the bundle rather than to optimisation |
+
+📏 **Cost.** 10 runs at ~5 min ≈ **1 GPU-hour**.
+
+### The branch after Gate F
+
+🔒 **Declared 2026-09-06, before Gate F runs.** ⚠️ Gate F's **own** decision rule
+lives in [`capability_gates.md`](results/capability_gates.md) and is **not**
+restated here. This declares what happens to the **programme** on each outcome,
+which nothing currently says.
+
+🔒 **The trigger is Gate F resolving, not the calendar.** The three-week box (§3,
+to **2026-09-27**) is the backstop for the case where F does not resolve at all —
+📏 D and E together cost about a day, so the binding question is the outcome, not
+the budget.
+
+| Gate F, F1/F2 arm | what happens to the instrument programme |
+|---|---|
+| ✅ **moves capability by its declared rule** | The programme continues **inside the box**: ablate which of `--cue-mode`, `--curriculum-boundaries` and `--curriculum-mix` did it. ⛔ A pooled F1 + F2 result is not an attribution, and the file already forbids pooling the arms |
+| ⛔ **nulls** | ☠️ **The instrument programme is finished.** No further capability gate is proposed, [`bc_init.py`](scripts/bc_init.py) manufactures the learned-loop arm for RQ1 as a **probe**, and writing begins. ⚠️ The paper then reports that the scripted baseline remains the strongest policy — which §3 already says the thesis survives |
+
+⛔ **The F3 arm does not extend the box either way.** Its prior is low by
+measurement: [`obs_mask_gate.md`](results/obs_mask_gate.md) masked nine features
+for a null, and that is the base rate for observation surgery here.
+
+
 ## 6. Framings that were refuted, and why they are kept
 
 ⛔ **A refuted framing is evidence, not embarrassment.** Each was killed by a run
 designed to test it, and the sequence is why the current claim should be trusted.
 
+🔒 **The narrative behind row 1 lives in [`docs/HISTORY.md`](docs/HISTORY.md)** —
+the re-opening, its arithmetic, the correction made during it, and Gate D's
+verdict. ⛔ Split out on 2026-09-06, verbatim; nothing was deleted.
+
 | framing | killed by | when |
 |---|---|---|
-| *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 — ⚠️ **partially reinstated 2026-09-04.** The eight nulls are *confounded*, not refuted: all were measured at ~5,900 Adam steps. §3 |
+| *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 — ⚠️ **partially reinstated 2026-09-04**, then ⭐ **re-refuted 2026-09-06.** The reinstatement said the eight nulls were *confounded*, not refuted, because all were measured at ~5,900 Adam steps. 📏 Gate D tested that confound directly and it went the **other** way — 10x the budget costs 32 pp — so the nulls stand, and now stand *tested*. [`HISTORY.md`](docs/HISTORY.md) |
 | *The adversary ladder is non-monotone; adaptivity does not help* | the 5-seed CUDA re-run **reversed** a one-seed CPU result | 2026-09-03 |
 | *Exploitability is a cost of **capability*** | the frontier run: `b0-geodesic` is **more capable than every learned policy and less exploitable than all of them** | 2026-09-04 |
 | *Four objectives, with the capability programme as an RQ* | superseded by three RQs; the capability programme is an instrument, not an objective | reframed 2026-09-06 |
@@ -435,7 +436,8 @@ applied silently. §2 carries the old → new mapping.
 
 🔒 **The third was refuted *before it was declared*,** because it was fitted over
 eight policies rather than written down after four. ⛔ Hold the current claim to
-the same standard: §7 runs 1 and 2 exist to break it.
+the same standard: §7's closed runs 1 and 2 were built to break it, and §7 item 4
+is the next attempt.
 
 ---
 
@@ -478,7 +480,19 @@ chosen one?"* — computable from the capacity matrix `routing.py` already build
 
 🔒 **Time-boxed at three weeks (§3).** ~4 GPU-hours of compute; the box is on the
 search, not the hardware. 📏 **D and E are closed and both NULL** (§5); **F is
-what the box has left**, and it carries the lowest prior of the three.
+what the box has left**. ⭐ **And F is no longer the lowest prior — it is the
+leading hypothesis** (§5): D and E eliminated the optimiser and the advantage, and
+the cue-follower measurement below is direct evidence for the remaining one.
+📏 [`capability_gates.md`](results/capability_gates.md) already calls the cue and
+curriculum arm *"the best-motivated intervention in this file"*; this file had not
+caught up.
+
+🔒 **The next two runs, in order**, both declared before they run and both cheap:
+
+| | run | why |
+|---|---|---|
+| **i** | **Gate D2** — `--mini-batch-size 4096` alone, 5 seeds | ~1 GPU-hour. It converts *"that configuration is harmful"* into *"more optimisation does not help"*, or shows the collapse belongs to one of the four other knobs. §5 |
+| **ii** | **Gate F, `--cue-mode bearing`** | ⭐ The structural arm: a bearing cannot be servoed to a point, so *"fly here and hover"* stops being expressible while acquisition — which needs only the bearing, and which B0's own fan uses — survives. ⛔ It removes the shortcut from the hypothesis space rather than tuning around it |
 
 🔒 **Declared in full, before any run:**
 [`results/capability_gates.md`](results/capability_gates.md). Ordered so that each
@@ -488,7 +502,7 @@ is interpretable given the one before it.
 |---|---|---|---|
 | **D** | is the policy **optimisation-limited**? | `--mini-batch-size`, `--target-kl`, `--grad-norm-clip-critic`, `--orthogonal-init`, `--min-log-std`, and 📏 **`--gae-lambda`, never swept in this project's history** | It gates everything. Its NULL branch is a real result: it removes the confound from all eight prior nulls and makes [`credit_assignment.md`](results/credit_assignment.md) *stronger* |
 | **E** | does **per-drone credit** produce roles? | `--w-difference` — `D_i = G(z) − G(z_{−i})`, the mission term recomputed with drone `i` deleted, exactly | The successor axis `credit_assignment.md` names. ⛔ Only interpretable on a policy that can actually train, hence after D |
-| **F** | is the **observation** lying to the policy, and is the **curriculum** teaching a shortcut? | `--cue-mode`, `--curriculum-boundaries` / `--curriculum-mix`, `--mask-broadcast-obs` | ⚠️ **Two arms, very different priors, never pooled.** ⭐ The cue/curriculum arm is now measured (below); the broadcast-feature arm keeps `obs_mask_gate.md`'s null prior |
+| **F** | is the **observation** lying to the policy, and is the **curriculum** teaching a shortcut? | `--cue-mode`, `--curriculum-boundaries` / `--curriculum-mix`, `--mask-broadcast-obs` | ⭐ **Now the leading hypothesis, not the last resort.** ⚠️ **Two arms, very different priors, never pooled.** The cue/curriculum arm is measured below and 🔧 **`--cue-mode bearing` is the instrument to run first** — it removes the shortcut *structurally* rather than tuning around it. The broadcast-feature arm keeps `obs_mask_gate.md`'s null prior |
 
 🔒 **Gate D is a 2 × 4 factorial**, `{shipped budget, new budget} × λ ∈ {0.95,
 0.98, 0.99, 0.995}` — amended 2026-09-04 *before any run*, because the first
@@ -604,11 +618,13 @@ prices the mechanism cheaply and because it makes run 1 interpretable either way
 both rise monotonically with the loop's amplitude, RQ1 stops being one controlled
 pair and becomes a **curve**.
 
+### ⛔ Not on the roadmap
+
 ⛔ **Not on the roadmap**, and each for a reason that survives §3's re-opening:
 
 | | why not |
 |---|---|
-| **further reward *shaping*** | 🔒 §3 line 4 closes it **structurally**, and that line is exact. Team terms cancel from `Var_i(A)` by construction. ⚠️ Gate E is not shaping — it changes the **return**, and `D_i` is factored so it cannot move the equilibrium |
+| **further reward *shaping*** | 🔒 [`HISTORY.md`](docs/HISTORY.md)'s line 4 closes it **structurally**, and that line is exact. Team terms cancel from `Var_i(A)` by construction. ⚠️ Gate E is not shaping — it changes the **return**, and `D_i` is factored so it cannot move the equilibrium |
 | **further action-space work** | Gate A. ⚠️ It is *also* confounded by the optimisation budget — its velocity seeds "learn normally for the first fifth of the run, then decay" over 46 updates — but 📏 `capable \| observed` is already **0.620 vs B0's 0.617**, so control is not the deficit. ⛔ Re-open only if Gate D promotes and the pathologies persist |
 | **recurrence** | Bounded at 0.4 pp for *target* memory by the oracle. ⚠️ Role-commitment memory is left open by `memory_horizon.md` — but that is what Gate E attacks, far more cheaply and at a fraction of the bug density |
 | **frame stacking beyond k = 2** | A one-step search state needs no longer history |
@@ -632,15 +648,16 @@ be ~0.
 
 | risk | mitigation |
 |---|---|
-| **Run 1 shows the loop's target does not matter** | §1's mechanism is then wrong and RQ1 reverts to a bare correlation. ✅ The J-ladder decomposition and Gate B's number are unaffected — ⭐ and that is still true now the ladder sits *inside* RQ1, because it measures the **adversary**, not the controller |
+| ☠️ **Gate B's surviving confound is never closed** | ⭐ **The largest open risk to RQ1.** The rate-division half is refuted (B0 13.24 → 12.85 pp), but *"a longer chain has more links for the beam to find"* is not, and ⛔ **no policy in this project supplies the hop-matched comparison** that would close it. 🔒 §7 item 4's abstract twin can hold hop count fixed by construction — that is a second reason to build it |
+| ⛔ **Gate F nulls too** | The instrument programme is then **finished**, and that branch is declared in §5 rather than decided afterwards: `bc_init.py` supplies RQ1's learned-loop arm as a **probe**, and writing begins. 🔒 §3 already states the thesis does not depend on the outcome |
 | **J4 cycles.** Alternating best response's normal failure | 🔒 RQ1 and RQ3 stand without it, and RQ2's off-diagonal result stands as measured against **scripted** rungs; the strongest adversary reached is then scripted and the paper says so |
 | **PyTorch Geometric will not export** | ⚠️ Attempt it *locally*, before touching the Jetson. A GNN that cannot deploy is a **reported result** — its measured advantage over DeepSets is a null anyway |
 | **TR 36.777 NLoS intercept is wrong.** Every number re-derives | 🔒 One human reading of one table. Close it before the freeze |
 | **n = 1 environment** | ✅ **Resolvable, and cheaply — §7 item 4.** A **minimal abstract relay environment** that reproduces the `repair_amplitude_m` dose–response is the resolution. 🔒 It needs **no learned policy**: the arms are scripted controllers, so it does not queue behind the instrument. That converts the objection from a limitation into an **external-validity argument**, and the mechanism is *named and priced* rather than statistical either way |
-| **The claim moves a fourth time** | 🔒 Runs 1–2 are pre-declared attempts to break the current one. If it survives them it has been tested, not just fitted |
-| ⭐ **Gates D–F succeed and a learned policy beats B0** | ✅ **This strengthens the thesis rather than threatening it.** §1 already dropped the scripted-vs-learned framing, and it *requires* a capable learned policy to test the loop claim at all. B0 remains the protagonist of RQ1's controlled pair, which is scripted on both sides. 🔒 §3 is an instrument, so this outcome changes what RQ1 can be tested *on*, not what RQ1 claims |
-| ☠️ **Gates D–F succeed and every prior null has to be re-read** | ⚠️ The honest cost of §3's re-opening. 📏 Eight nulls, Gate A, Φ v2 and the k = 2 gate were all measured at ~5,900 Adam steps. If Gate D promotes, each needs a one-line re-statement — *"measured under a 10x smaller optimisation budget"* — and the cheap ones (Φ v2, k = 2) should be re-run before the freeze |
-| ⚠️ **Gate D promotes and destabilises** | Its PARTIAL branch exists for exactly this: helps on the median, hurts the worst seed. 🔒 `AGENTS.md` judges on the worst seed and that is not relaxed for this programme |
+| **The claim moves a fourth time** | 🔒 It has already survived three pre-declared attempts to break it — the loop's target (null), its amplitude (dose–response) and Gate B's division control. ⚠️ What is *not* yet tested is a **second environment**; §7 item 4 is the next attempt, and it is designed to fail informatively |
+| ⭐ **Gate F succeeds and a learned policy beats B0** | ✅ **This strengthens the thesis rather than threatening it.** §1 already dropped the scripted-vs-learned framing, and it *requires* a capable learned policy to test the loop claim at all. B0 remains the protagonist of RQ1's controlled pair, which is scripted on both sides. 🔒 §3 is an instrument, so this outcome changes what RQ1 can be tested *on*, not what RQ1 claims |
+| ☠️ **A late promotion forces every prior null to be re-read** | ⚠️ The honest cost of §3's re-opening. 📏 Eight nulls, Gate A, Φ v2 and the k = 2 gate were all measured at ~5,900 Adam steps. ⛔ **Gate D did not promote**, so this has not fired — but **Gate G** would fire it from a different direction, since it asks whether every learned number in `results/` was read at the wrong point. If either promotes, each null needs a one-line re-statement and the cheap ones (Φ v2, k = 2) should be re-run before the freeze |
+| ⚠️ **A gate promotes on the median and hurts the worst seed** | Gate D's PARTIAL branch existed for exactly this, and the rule generalises. 🔒 `AGENTS.md` judges on the **worst seed** and that is not relaxed for this programme, Gate D2 and Gate F included |
 | ⚠️ **`D_i`'s signal is circular** | 📏 The differentiable share it produces is policy-dependent — **35.6 %** on B0 (tenure 295) against **7.98 %** on the learned policy (tenure 47) — so the credit grows as roles emerge. Gate E's validity precondition measures the share **on the trained policy**, and its NULL branch is written to be informative if the bootstrap never starts |
 
 ---
