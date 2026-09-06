@@ -452,20 +452,65 @@ with `observer_tenure` at **46.6** against B0's **294.7**, the credit is spread
 across drones by role churn. ☠️ **The signal is diluted by exactly the churn it
 exists to fix** — the circularity this file declared before the run, now measured.
 
-#### 🔒 What VOID licenses, and what it does not
+#### 📏 The repaired arm, `w ∈ {3, 4, 6}` — and the axis is a NULL
 
-⛔ It does **not** license reading the +1.70 pp as an effect, and it does **not**
-license the NULL branch's *"strongest closure available"*. The credit axis is
-**untested**, not closed.
+Declared before it ran, decision rule unchanged. [`gateE2.jsonl`](gateE2.jsonl).
+The whole axis, both rounds, search / train split, 3 seeds:
 
-✅ It licenses one thing: **re-running the arm at a weight that clears the
-precondition.** That is satisfying a pre-declared validity condition, not
-re-tuning a treatment to improve its score — the distinction Gate D's REGRESSION
-branch turns on. 🔒 Declared now, before the run: `w_difference ∈ {3.0, 4.0, 6.0}`,
-same 3 seeds, same everything else, and **the same decision rule above, unchanged**
-(`observer_tenure ≥ 95`, Δ ≥ +3 pp). ⚠️ If no weight reaches a 20 % share, the
-instrument cannot be brought into range in this environment and *that* is the
-finding — reported as an instrument limitation, not as evidence about credit.
+| `w_difference` | 0.0 | 0.5 | 1.0 | 2.0 | 3.0 | 4.0 | 6.0 | **B0** |
+|---|---|---|---|---|---|---|---|---|
+| **median** | 45.18 | 45.44 | 46.46 | 46.88 | **47.79** | 45.11 | 46.60 | **57.30** |
+| worst | 44.28 | 44.22 | 43.93 | 45.73 | 45.86 | 42.73 | 45.07 | 54.80 |
+| **`observer_tenure`** | 45.4 | 40.3 | 42.8 | 46.6 | 41.4 | 40.6 | 41.0 | **294.7** |
+| **`role_entropy`** | 0.492 | 0.556 | 0.585 | 0.566 | 0.585 | 0.554 | **0.603** | **0.062** |
+| `observer_range_m` | 192.8 | 200.1 | 187.1 | 193.9 | 205.3 | 203.1 | **211.7** | **90.0** |
+| `observed` | 64.7 | 64.3 | 65.9 | 68.8 | 64.8 | 64.4 | 63.7 | 92.8 |
+
+☠️ **The entire axis is smaller than the noise inside one cell.**
+
+| | |
+|---|---|
+| median spread over `w = 0 → 6` (a 12x range) | **2.68 pp** |
+| typical **within-cell** seed range | **4.23 pp** |
+
+⛔ **And the mechanism moves the wrong way.** At `w = 6.0` — a term worth **six
+times** the mission weight — `role_entropy` (0.603) and `observer_range_m`
+(211.7 m) are the **worst on the board**. Whatever the term does, it is not
+producing roles.
+
+⚠️ **The `+1.70 pp` at `w = 2.0`, with 3/3 paired seeds, was noise.** The
+extension shows +2.6 at `w = 3`, **−0.07** at `w = 4`, +1.4 at `w = 6`. 🔒 Three
+paired seeds moving together is not a dose–response, and this is the second time
+in this project that a monotone-looking 3-point trend did not survive extension.
+
+#### 🔒 What is still owed before this can be called NULL rather than VOID
+
+⛔ The `w = 2.0` arm measured a **14.25 %** differentiable share against a
+declared **20 %**, so it is VOID. The extension does not inherit validity — it
+has to earn it. 📏 The share scales with the weight (B0: 5.2 / 15.5 / 35.6 % at
+`w` = 0.5 / 1 / 2), so `w = 6.0` is the cell most likely to clear the bar:
+
+```bash
+uv run python scripts/measure_credit.py \
+    --policy runs/gateE2/sw-w_difference6p0__e54208-s0/checkpoint.pt \
+    --device cuda --num-envs 64 --seeds 3 --w-difference 6.0
+```
+
+| outcome | verdict |
+|---|---|
+| **≥ 20 %** | ✅ **NULL, earned.** Per-drone credit demonstrably occupied a fifth or more of the differentiable advantage, and role differentiation got **worse**. That is the *"strongest closure available"* branch, and it closes the credit axis on evidence rather than on exhaustion |
+| **< 20 %** | ⛔ **The instrument cannot be brought into range in this environment.** Reported as an instrument limitation — the credit axis stays **untested**, not closed, and `D_i` is not the tool that can test it here |
+
+#### ⚠️ Both confirmations landed ~5 pp below their search scores
+
+| cell | search worst / median | confirmation (eval, fresh seeds 100–104) |
+|---|---|---|
+| `w = 2.0` | 45.73 / 46.88 | **34.76 / 42.51** |
+| `w = 3.0` | 45.86 / 47.79 | **37.46 / 42.09** |
+
+🔍 **Consistent across both**, which makes it a property of the train → eval step
+plus selection rather than a fluke of one cell. ⛔ Do not quote a search score.
+📏 Both land at ~42 % eval median, against B0's **57.3 %**.
 
 #### ⚠️ Search 46.88 / 45.73 → confirmation 42.51 / 34.76
 
