@@ -105,7 +105,7 @@ for a third candidate in the same session.
 
 ---
 
-# Track B — needs CUDA. The instrument's three remaining gates
+# Track B — needs CUDA. One exploration arm, then the three remaining gates
 
 ⚠️ **Do one thing before any of them.** Phase 0 measured `grad_kept` at
 **0.035–0.238** on two tasks that reach published reference performance, and at
@@ -116,7 +116,74 @@ for a third candidate in the same session.
 `approx_kl` and `clip_fraction` instead. 🔒 That declaration has not been made yet,
 so the fix is free now and expensive after.
 
+## B0. ⚠️ Block A, isolated — **exploration, not a gate.** Run this before B1
+
+☠️ **The one thing on this roadmap that nothing in the repo currently schedules.**
+Added 2026-09-06.
+
+**What.** `--orthogonal-init`, `--no-tanh-mean`, and `--min-log-std -1.6 -1.6 -3.0`,
+at the **shipped** learning rate and the **shipped** budget. ⛔ No
+`--mini-batch-size`, no `--target-kl`, no `--grad-norm-clip-critic`, and ⛔ **no
+change to `--grad-norm-clip`** — `docs/CAPABILITY_BRIEF.md` §4's Block A raises it
+until `grad_kept > 0.8`, and 📏 [`trainer_benchmark.md`](../results/trainer_benchmark.md)
+measured `grad_kept` at **0.035–0.238** on two tasks that reach published reference
+performance and **0.56–0.89** on the one that learns nothing.
+
+**Why it is missing.** These three knobs have **never been applied cleanly.** They
+rode inside Gate D's five-knob screening arm, which **regressed**, so the ablation
+that arm's declaration owed *"if it promotes"* was never triggered and nothing was
+ever attributed. 📏 The repo records the omission but does not schedule the fix:
+[`capability_gates.md`](../results/capability_gates.md)'s *"Not in any gate, and
+why"* table says of the `tanh` mean — *"It rode in Gate D's five-knob screening arm
+and **was never isolated**"* — and the Gate D runbook says `--orthogonal-init` is
+*"the one to drop first — it is the only one that changes the network rather than
+the optimiser."*
+
+**Why now and not six weeks ago.** ⭐ It is **readable for the first time.**
+Per-axis `sigma_x/y/z` and `sat_x/y/z` did not exist until Phase 1 landed
+(2026-09-06), and they are the only columns that can say whether these knobs did
+what they are for. Judging this arm on `mission_capable` would tell you nothing.
+
+**🔒 Status: exploration under `CAPABILITY_BRIEF` §1.** One or two seeds, **no
+pre-declared rule**, read the diagnostics and not the headline metric. ⛔ Nothing
+from it may be cited as a result or appear outside
+[`capability_log.md`](../results/capability_log.md).
+
+**What to read, in order:**
+
+| column | what would count as the knob doing its job |
+|---|---|
+| `sigma_z` vs `sigma_x` / `sigma_y` | 📏 B0's mean `\|a_z\|` is **0.006** against 0.46 / 0.52 on x / y — z should collapse onto its floor while x and y do not. A scalar σ spends a third of the exploration budget on a dimension with nothing to explore |
+| `sat_x` / `sat_y` / `sat_any` | 📏 B0 saturates ≥ 1 axis on **32.6 %** of steps (x 15.0 %, y 19.8 %). A `tanh` mean reaches ±1 only asymptotically, so `--no-tanh-mean` should move this toward B0 |
+| `at_boundary` | 📏 learned **15–23 %** against B0's **0.9 %** — should fall |
+| `approx_kl`, `clip_fraction` | ⛔ the health check. **Not `grad_kept`** |
+
+**⭐ Why it goes before Gate F, and this is the real argument for running it.**
+Gate F's control is the **shipped configuration** — Gate E nulled, so nothing was
+promoted to replace it. If these three knobs move behaviour at all, then Gate F
+measures the cue against a control that a free, standard-practice change would
+have moved anyway, and a null there would be ambiguous between *"the cue is not
+the problem"* and *"the control was badly initialised."* 📏 Minutes per run makes
+that ambiguity not worth carrying.
+
+**If it moves something.** It earns its **own confirmation gate** — declared
+before the run, ≥ 5 seeds, judged on the worst seed — and Gate F then runs on top
+of it. ⛔ An exploration number does not promote a configuration.
+
+**If it moves nothing.** Gate F runs on the shipped configuration as planned, and
+*"the PPO reference initialisation was applied in isolation and changed nothing"*
+becomes a reportable line rather than an open question. ⚠️ That is a real outcome:
+`orthogonal_init` has been **absent from every run in this project's history**.
+
+---
+
 ## B1. ⭐ Gate F — the leading hypothesis
+
+⭐ **Its prior rose on 2026-09-06**: `PLAN.md` §5 now records that the shortcut
+hypothesis **retro-predicts §3's line 1** — the deficit is `observed` and nothing
+else, which is the signature a servo-to-the-cue policy produces and the one it
+alone predicts. ⛔ A consistency, not a discriminating test, and Gate F's declared
+rule is untouched.
 
 **Where everything for it already lives** — ⛔ nothing needs to be invented:
 
@@ -248,6 +315,7 @@ engineering result and move on. ⛔ Explicitly allowed for by the declaration.
 |---|---|
 | **gSDE on the relay** | ✅ Implemented, tested and **ships off**. 📏 It converts `MountainCarContinuous-v0` from 2/5 seeds solved to 5/5, and the magnitude confound was tested and refuted. ⛔ That says nothing about the relay, and the base rate here is eight nulls plus Gates A, D and E. 🔍 It earns a gate only if Gate F promotes and saturation is still the limiting behaviour — 📏 the learned policies sit at the speed cap on 57 % of steps and at the boundary on 15–23 %, against B0's 3.1 % and 0.9 %, which is the same *saturation without displacement* signature the failing benchmark cells show |
 | a **high-dimensional trainer benchmark** | ⚠️ Phase 0 validated the trainer on 3-D and 4-D observation spaces only. MuJoCo and Box2D are dependency additions `AGENTS.md` requires flagging. 🔧 Worth it only if a reviewer asks |
+| **frame stacking (`k = 2`)** | ⚠️ **Inconclusive, not closed** — 📏 +1.94 pp with a **worst seed of −1.25** (`PLAN.md` §5). `CAPABILITY_BRIEF` §5 owed a re-run *"if Gate D promotes"*; ⛔ Gate D regressed, so the re-run is **not** owed. It stays inconclusive, and it is the one item in the "closed on measured grounds" list that is not actually closed |
 | a **truncation-bootstrap behavioural test** | ☠️ Genuinely open. `probe.py` misses it (📏 32.4 against 32.7) and both Phase 0 tasks miss it (📏 0.937 against 0.961), all three for the same structural reason — the value at truncation is near zero. It is covered by unit tests only. Closing it needs a task whose optimal cost-to-go is **large** at the horizon |
 | everything in `PLAN.md` §9 | deliberately not built; unchanged |
 

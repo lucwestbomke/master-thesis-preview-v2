@@ -571,6 +571,33 @@ routes to the same fix: `--curriculum-boundaries` shortens the stage, and
 servoed to a point, so "fly here and hover" stops being expressible, while
 acquisition (which needs only the bearing, and which B0's own fan uses) survives.
 
+#### 🔍 Added 2026-09-06 — the shortcut hypothesis RETRO-PREDICTS §3's line 1
+
+⚠️ **An inference, not new evidence.** Both halves have been on the record for
+days and nothing joined them; this joins them and claims nothing measured.
+
+📏 §3 line 1: *the gap is `observed` and nothing else — conditioned on a sightline
+the GNN converts it as well as B0, **0.620 against 0.617***. That is a **very
+specific** signature: the learned policy is not worse at closing a chain, it is
+worse at **being somewhere it can see from**.
+
+🔍 A policy that learned *servo-to-the-cue-and-hover* predicts exactly that
+signature and no other. It fails to **acquire**, because the cue is a position
+that goes stale — 📏 median `|cue − hvt|` **984 m** at `t = 599` against a **127 m**
+along-street sightline median — while **conversion given a sightline stays
+normal**, because closing the chain is the part the shortcut never had to give up.
+⭐ And the cue-follower measurement shows the degenerate policy in its pure form
+doing precisely this: at stage 1 its `capable` **equals its `observed` exactly**,
+81.6 / 81.6.
+
+⛔ **This is a consistency, not a discriminating test, and it does not become
+one.** Other mechanisms also produce an `observed`-only gap, and 🔒 **Gate F's
+decision rule is declared in [`capability_gates.md`](results/capability_gates.md)
+and is not touched by this paragraph.** What it changes is the **prior**: the
+leading hypothesis now explains the shape of the deficit and not only the shape of
+the curriculum, which is a reason to run Gate F first and not a reason to expect
+it to pass.
+
 🔒 **Excluded by decision, 2026-09-04**, and both are recorded so they are not
 quietly re-litigated:
 
