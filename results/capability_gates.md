@@ -383,9 +383,69 @@ is already **0.620 for the GNN against B0's 0.617**, so the entire 15 pp lives i
 `observed` and a treatment that raises capability *without* raising `observed`
 has done something this file did not predict.
 
-### Result
+### Result — ⛔ **NULL on both readouts, 2026-09-06.** ⚠️ Verdict pending the validity check.
 
-⛔ **Not yet run.**
+Search: train split, 3 seeds, ranked on worst. Confirmation: eval split, **fresh**
+seeds 100–104. [`gateE.jsonl`](gateE.jsonl).
+
+| `w_difference` | worst | median | per seed |
+|---|---|---|---|
+| **0.0** (control) | 44.28 % | 45.18 % | 44.3 · 48.5 · 45.2 |
+| 0.5 | 44.22 % | 45.44 % | 45.4 · 44.2 · 47.4 |
+| 1.0 | 43.93 % | 46.46 % | 43.9 · 49.3 · 46.5 |
+| **2.0** | **45.73 %** | **46.88 %** | 45.7 · 52.5 · 46.9 |
+
+✅ **The control reproduces Gate D's `(shipped, λ = 0.95)` cell to the digit** —
+44.28 / 45.18 in both. The harness is sound and the two gates are on one scale.
+
+📏 **Δ = +1.70 pp median, +1.45 pp worst, and 3/3 paired seeds improve**
+(+1.45, +3.99, +1.69). Small, consistent, and **below the declared +3 pp**.
+
+#### ⛔ The primary readout did not move
+
+| | control | `w = 2.0` | declared bar | B0 |
+|---|---|---|---|---|
+| **`observer_tenure`** | 45.4 | **46.6** | **≥ 95** | 294.7 |
+| `role_entropy` | 0.492 | **0.566** | — | 0.062 |
+| `observer_range_m` | 192.8 | 193.9 | — | 90.0 |
+| `observed` | 64.7 % | 68.8 % | — | 92.8 % |
+| `hop_mean` | 1.277 | 1.337 | — | 2.13 |
+
+☠️ **`role_entropy` got *worse*** — 0.492 → 0.566, further from B0's 0.062. So
+whatever the +1.7 pp is, **it is not role differentiation.** `observed` is the
+metric that moved most (+4.1 pp), which is the right axis but a twentieth of the
+distance to B0.
+
+🔒 Against the declared rule — `observer_tenure` **46.6 < 95** and Δ **+1.70 <
++3 pp** — this is the **NULL** branch.
+
+#### ⚠️ NULL or VOID is decided by the validity precondition, which has not run
+
+⛔ The NULL branch's claim is that per-drone credit *reached the gradient and
+changed nothing* — **"the strongest closure available"**. That claim rests
+entirely on the validity precondition: `differentiable_share > 20 %` measured
+**on the trained policy**. If it is below, the arm is **VOID**, and the honest
+statement collapses to *"the term never reached the gradient"*, which closes
+nothing.
+
+📏 **And the pre-run measurement predicts it will fail.** The share is
+policy-dependent: **35.6 %** on B0 (tenure 295) but **7.98 %** on a learned
+policy (tenure 47). This policy has tenure **46.6**. 🔍 That circularity was
+declared in this file *before* the run — *"the signal grows as roles emerge, so it
+is partly circular"* — and it is now the deciding question rather than a caveat.
+
+```bash
+uv run python scripts/measure_credit.py --policy runs/gateE/sw-w_difference2p0__e54208-s0/checkpoint.pt \
+    --device cuda --num-envs 64 --seeds 3 --w-difference 2.0
+```
+
+#### ⚠️ Search 46.88 / 45.73 → confirmation 42.51 / 34.76
+
+Fresh seeds 100–104 on eval: **34.8 · 38.9 · 42.5 · 43.0 · 43.4**. `sweep.py`'s
+own rule is *"if they disagree, the disagreement is the finding"*. ⚠️ Two effects
+are confounded in that gap — selection over four cells, and train → eval — and
+the eval seed range is **8.6 pp**, which is this project's known seed variance.
+⛔ Do not quote 46.88 %.
 
 ---
 
