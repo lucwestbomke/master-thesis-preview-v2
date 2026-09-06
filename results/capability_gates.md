@@ -419,25 +419,53 @@ distance to B0.
 🔒 Against the declared rule — `observer_tenure` **46.6 < 95** and Δ **+1.70 <
 +3 pp** — this is the **NULL** branch.
 
-#### ⚠️ NULL or VOID is decided by the validity precondition, which has not run
+#### ☠️ VOID, by the declared precondition. 2026-09-06.
 
-⛔ The NULL branch's claim is that per-drone credit *reached the gradient and
-changed nothing* — **"the strongest closure available"**. That claim rests
-entirely on the validity precondition: `differentiable_share > 20 %` measured
-**on the trained policy**. If it is below, the arm is **VOID**, and the honest
-statement collapses to *"the term never reached the gradient"*, which closes
-nothing.
+📏 `scripts/measure_credit.py` on the trained `w = 2.0` policy, CUDA, eval split,
+stage 4, F4/J1, 64 envs, 3 seeds:
 
-📏 **And the pre-run measurement predicts it will fail.** The share is
-policy-dependent: **35.6 %** on B0 (tenure 295) but **7.98 %** on a learned
-policy (tenure 47). This policy has tenure **46.6**. 🔍 That circularity was
-declared in this file *before* the run — *"the signal grows as roles emerge, so it
-is partly circular"* — and it is now the deciding question rather than a caveat.
+| | share |
+|---|---|
+| seed 0 / 1 / 2 | 14.04 % · 14.25 % · 14.60 % |
+| **median** | **14.25 %** |
+| the `difference` term's own between-drone share | 52.18 % |
+| control class ([`credit_assignment.md`](credit_assignment.md), any policy) | 0.04 – 0.16 % |
 
-```bash
-uv run python scripts/measure_credit.py --policy runs/gateE/sw-w_difference2p0__e54208-s0/checkpoint.pt \
-    --device cuda --num-envs 64 --seeds 3 --w-difference 2.0
-```
+🔒 **The declared precondition was `> 20 %`. Measured 14.25 %. The arm is VOID.**
+⛔ Recorded as declared. A rule invented after the fact is not a rule, and the
+temptation here is precisely to relabel this NULL because the capability numbers
+are already in hand.
+
+⚠️ **And the precondition was badly drawn, which is a separate thing to own.** It
+borrowed the `> 20 %` figure from `measure_credit.py`'s *refute* band — a
+threshold built to answer *"is there ample drone-differentiating signal?"* — and
+repurposed it as a **validity** gate without re-deriving it. 14.25 % sits in that
+script's own **INCONCLUSIVE** band (5–20 %), and *"the term did not reach the
+gradient"* is not an honest description of a **~90–350x** rise over the control
+class. ⛔ The rule still binds; the criticism is recorded beside it, not instead
+of it.
+
+🔍 **Why the share is 14 % here and 35.6 % on B0, mechanistically.** The
+`difference` term is **52.18 %** between-drone on this policy against ~80 % on B0.
+`D_i`'s *return-to-go* concentrates on a drone only if that drone stays pivotal;
+with `observer_tenure` at **46.6** against B0's **294.7**, the credit is spread
+across drones by role churn. ☠️ **The signal is diluted by exactly the churn it
+exists to fix** — the circularity this file declared before the run, now measured.
+
+#### 🔒 What VOID licenses, and what it does not
+
+⛔ It does **not** license reading the +1.70 pp as an effect, and it does **not**
+license the NULL branch's *"strongest closure available"*. The credit axis is
+**untested**, not closed.
+
+✅ It licenses one thing: **re-running the arm at a weight that clears the
+precondition.** That is satisfying a pre-declared validity condition, not
+re-tuning a treatment to improve its score — the distinction Gate D's REGRESSION
+branch turns on. 🔒 Declared now, before the run: `w_difference ∈ {3.0, 4.0, 6.0}`,
+same 3 seeds, same everything else, and **the same decision rule above, unchanged**
+(`observer_tenure ≥ 95`, Δ ≥ +3 pp). ⚠️ If no weight reaches a 20 % share, the
+instrument cannot be brought into range in this environment and *that* is the
+finding — reported as an instrument limitation, not as evidence about credit.
 
 #### ⚠️ Search 46.88 / 45.73 → confirmation 42.51 / 34.76
 
