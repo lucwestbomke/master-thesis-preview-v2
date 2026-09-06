@@ -237,6 +237,12 @@ response is being measured at all**. A capable learned policy is therefore a
 > remains a **probe, not an arm** — it is not a like-for-like comparison for the
 > architecture ladder or for Gate B, and any result using it must say so.
 
+📏 **Two of the three are already spent.** D and E are **closed and both NULL**
+(§5) — λ null-to-harmful with 10x the budget at **−32 pp**, and per-drone credit
+over a **12x** weight range sitting inside a single cell's seed noise. 🔒 The box
+is a *budget*, not a schedule: what it has left is **F** and anything the
+programme proposes after it.
+
 ⛔ **The retitling does not soften the re-opening.** ⚠️ **This section said
 "closed. Do not re-open." until 2026-09-04.** It was re-opened on a named
 confound in the optimiser, and ⭐ **on 2026-09-06 that confound was measured and
