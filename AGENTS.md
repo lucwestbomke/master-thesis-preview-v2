@@ -97,7 +97,14 @@ and `role_entropy` at **0.49–0.60** against **0.062**. Nothing moves them.
 axes, and it holds."** The protagonist is the strongest available policy and it
 happens to be scripted; the question asked of it is how much of that capability an
 adversary can take away. ⚠️ Re-opening it again needs a *new* mechanism and a gate
-declared before its run, not another sweep of a knob.
+declared before its run, not another sweep of a knob — the record it has to clear
+is [`docs/HISTORY.md`](docs/HISTORY.md).
+
+⭐ **What is still open is Gate F**, promoted 2026-09-06 from lowest prior to the
+**leading hypothesis**: D and E eliminated the optimiser and the advantage, and
+📏 a one-line cue-follower scores **94 %** of B0 at stage 1 and **6.1 %** at stage
+4, below random's 10.7 %. 🔒 The branch for *"F nulls too"* is declared in
+`PLAN.md` §5, before the run.
 
 **Working title** — *The cost of adaptation: measuring and removing
 exploitability in multi-agent relay under directed jamming.* **Goal** — show that
@@ -220,7 +227,8 @@ probe did not.
 | File | Read it when |
 |---|---|
 | [`PLAN.md`](PLAN.md) | **start here** — the claim, the three RQs, the phases, the gates declared before the runs |
-| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | **before writing any of it down** — one definition each for adaptation, loop amplitude, loop target, exploitability, damage, exploitation, off-diagonal, dose–response, disjoint |
+| [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | **before writing any of it down** — one definition each for adaptation, loop amplitude, loop target, exploitability, damage, exploitation, off-diagonal, dose–response, disjoint, and for gate / instrument / arm / probe |
+| [`docs/HISTORY.md`](docs/HISTORY.md) | **before re-opening the capability question** — the re-opening, its arithmetic, the correction made during it, Gate D's verdict, the five lines and Gate E. Split out of `PLAN.md` §3 on 2026-09-06, verbatim |
 | [`docs/REDUCTION.md`](docs/REDUCTION.md) | **second** — what was carried over that still has to come out, in order |
 | [`docs/INHERITED.md`](docs/INHERITED.md) | quoting any constant. Every measured number that carries forward, with provenance |
 | [`docs/inherited/DECISIONS.md`](docs/inherited/DECISIONS.md) | before proposing anything — every entry was proposed then killed on evidence |
