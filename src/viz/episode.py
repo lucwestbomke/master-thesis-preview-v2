@@ -280,6 +280,8 @@ def _make_policy(name: str, env: BatchedSwarmEnv, n: int):
             # still loads as the network it was trained as.
             tanh_mean=blob.get("tanh_mean", True),
             layer_norm=blob.get("layer_norm", False),
+            # ⚠️ See `scripts/eval_policy.py`: gSDE changes the state dict.
+            sde=blob.get("sde", False),
             obs_history=blob.get("obs_history", 1),
         ).to(env.device)
         actor.load_state_dict(blob["policy"])

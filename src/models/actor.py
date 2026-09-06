@@ -275,6 +275,8 @@ class SwarmActor(nn.Module):
         orthogonal_init: bool = False,
         layer_norm: bool = False,
         head_gain: float = 0.01,
+        sde: bool = False,
+        sde_sample_freq: int = 4,
     ):
         super().__init__()
         self.architecture = architecture
@@ -331,12 +333,142 @@ class SwarmActor(nn.Module):
         self.register_buffer("min_log_std", _per_dim(min_log_std, "min_log_std"), persistent=False)
         self.max_log_std = float(max_log_std)
 
+        self._init_sde(sde, sde_sample_freq, initial_log_std, ACTION_DIM)
+
         if orthogonal_init:
             orthogonal_init_(self.trunk)
             # A small head gain keeps the initial mean near zero, so the policy
             # does not commit to a direction before it has seen anything.
             nn.init.orthogonal_(self.head.weight, head_gain)
             nn.init.zeros_(self.head.bias)
+
+    # -- gSDE ------------------------------------------------------------- #
+
+    def _init_sde(
+        self,
+        sde: bool,
+        sde_sample_freq: int,
+        initial_log_std: float | Sequence[float],
+        act_dim: int,
+    ) -> None:
+        """Generalized State-Dependent Exploration (Raffin, Kober, Stulp 2021).
+
+        ⛔ **OFF by default and it adds nothing when off.** No parameter, no
+        buffer, no branch taken. 🔒 That is not politeness -- `results/capability_gates.md`
+        records a bit-identity check over 207,879 parameters as the standard
+        everything built for these gates must meet, and a parameter that exists
+        unconditionally would join `state_dict()` and break **every checkpoint in
+        `runs/`** with `Missing key(s)`. That is exactly what `min_log_std` did.
+
+        ## What gSDE changes
+
+        📏 Ordinary PPO exploration draws `eps ~ N(0, sigma^2)` **fresh every
+        step**, so the noise is white. On a vehicle with mass and a 400 ms control
+        period, white noise on the acceleration command largely integrates away:
+        it perturbs the *action* without perturbing the *trajectory*, and what it
+        does reach the plant it pays for in `energy`.
+
+        gSDE replaces the per-step draw with a noise **matrix**
+        `W ~ N(0, sigma^2)`, shape `(latent, actions)`, resampled only every
+        `sde_sample_freq` steps, and sets
+
+            eps(s) = phi(s)' W
+
+        where `phi(s)` is the trunk's output -- the features the mean is already
+        computed from. Within a sampling period the noise is a deterministic
+        function of the state, so it is **temporally correlated and smooth**, and
+        two nearby states get two nearby perturbations.
+
+        🔒 **The log-probability is still an ordinary diagonal Gaussian**, which is
+        what makes this safe to put behind a PPO ratio. Marginalising over `W`,
+
+            eps_j(s) ~ N(0, sum_i phi_i(s)^2 sigma_ij^2)
+
+        so `a | s ~ N(mu(s), diag(sigma_hat(s)^2))` with a **state-dependent**
+        standard deviation. `evaluate` therefore needs no memory of which `W`
+        produced an action -- it recomputes `sigma_hat(s)` from `phi(s)` -- which
+        is what lets a shuffled minibatch work at all.
+
+        ⚠️ **`min_log_std` floors the EFFECTIVE deviation**, `sigma_hat(s)`, not
+        the matrix. The flag's meaning is "exploration may not fall below this"
+        and that is the quantity it has to hold. At the default of -20 it is inert.
+        """
+        self.sde = bool(sde)
+        self.sde_sample_freq = int(sde_sample_freq)
+        #: The sampled noise matrix. ⚠️ A plain attribute, not a buffer: it is
+        #: transient, it is re-drawn every `sde_sample_freq` steps, and its shape
+        #: depends on the batch. It must never reach a checkpoint.
+        self.exploration_mat: Tensor | None = None
+        if not self.sde:
+            return
+        # `(latent, actions)`, every entry at `initial_log_std` -- the same
+        # convention as the reference implementation.
+        #
+        # ☠️ **`initial_log_std` does NOT mean the same thing here as it does for
+        # `log_std`, and no rescaling can make it.** For a uniform matrix the
+        # effective deviation is `sigma_hat_j(s) = ||phi(s)|| * sigma_j`, so it
+        # scales with the magnitude of the trunk's output -- which depends on the
+        # task, on the initialisation and on how far training has moved the
+        # weights. A first draft of this method subtracted `0.5*log(latent_dim)`
+        # to "correct" for it, assuming `||phi||^2 ~ latent_dim`. 📏 Measured on a
+        # 64-wide trunk: `||phi|| = 2.10`, not 8.0 -- wrong by 4x, and not a
+        # constant in the first place. The correction is gone.
+        #
+        # 🔒 Which is why `PPOTrainer` reads `sigma_x/y/z` off a real forward pass
+        # under gSDE instead of off any parameter: the effective deviation is the
+        # only number worth watching and it cannot be predicted from a flag.
+        #
+        # ⚠️ `act_dim` rather than `ACTION_DIM`: `scripts/bench_trainer.py`'s
+        # `BenchActor` shares this method with a 1- or 2-dimensional action.
+        if isinstance(initial_log_std, (int, float)):
+            per_dim = torch.full((act_dim,), float(initial_log_std))
+        else:
+            values = [float(v) for v in initial_log_std]
+            per_dim = (
+                torch.full((act_dim,), values[0]) if len(values) == 1 else torch.tensor(values)
+            )
+        self.sde_log_std = nn.Parameter(per_dim.unsqueeze(0).repeat(self.trunk.out_dim, 1))
+
+    def _sde_matrix_std(self) -> Tensor:
+        return self.sde_log_std.clamp(max=self.max_log_std).exp()
+
+    def _sde_std(self, latent: Tensor) -> Tensor:
+        """`sigma_hat(s)`, `(..., ACTION_DIM)`. The closed form above."""
+        variance = latent.pow(2) @ self._sde_matrix_std().pow(2)
+        return variance.clamp_min(1e-12).sqrt()
+
+    @torch.no_grad()
+    def reset_noise(self, rows: int | None = None) -> None:
+        """Draw a fresh `W`. ⛔ A no-op when gSDE is off, consuming no RNG.
+
+        🔒 One matrix **per row**, not one shared across the batch. With 4096
+        parallel environments a shared matrix would have every environment
+        exploring in the same direction at once, which is the opposite of what
+        parallel rollouts are for.
+        """
+        if not self.sde:
+            return
+        std = self._sde_matrix_std()
+        shape = std.shape if rows is None else (rows, *std.shape)
+        self.exploration_mat = torch.randn(shape, device=std.device, dtype=std.dtype) * std
+
+    def _sde_noise(self, latent: Tensor) -> Tensor:
+        if self.exploration_mat is None or (
+            self.exploration_mat.dim() == 3 and self.exploration_mat.shape[0] != latent.shape[0]
+        ):
+            # Lazy, so `act` is safe to call outside the trainer's loop.
+            self.reset_noise(latent.shape[0])
+        mat = self.exploration_mat
+        if mat.dim() == 3:
+            return torch.bmm(latent.unsqueeze(1), mat).squeeze(1)
+        return latent @ mat
+
+    # -- the distribution -------------------------------------------------- #
+
+    def _latent(self, flat: Tensor) -> Tensor:
+        if self.obs_history > 1:
+            flat = flat.unflatten(-1, (self.obs_history, FLAT_DIM))
+        return self.trunk(flat)
 
     def forward(self, flat: Tensor) -> tuple[Tensor, Tensor]:
         """`(mean, log_std)`. `log_std` broadcasts against `mean`.
@@ -345,11 +477,17 @@ class SwarmActor(nn.Module):
         with no history, `(..., k * FLAT_DIM)` with it. Callers -- the trainer's
         rollout buffer, `evaluate.py`, an ONNX export -- never handle a `k` axis.
         The unflatten to `(..., k, FLAT_DIM)` happens here, once, at the boundary.
+
+        ⚠️ Under gSDE the second return is **state-dependent** and already has
+        `mean`'s shape. Every caller treats it as something that broadcasts
+        against `mean`, so nothing downstream has to know which mode it is in.
         """
-        if self.obs_history > 1:
-            flat = flat.unflatten(-1, (self.obs_history, FLAT_DIM))
-        raw = self.head(self.trunk(flat))
+        latent = self._latent(flat)
+        raw = self.head(latent)
         mean = torch.tanh(raw) if self.tanh_mean else raw
+        if self.sde:
+            std = torch.maximum(self._sde_std(latent), self.min_log_std.exp())
+            return mean, std.log()
         # ⚠️ Two steps rather than one `clamp`: `min_log_std` is a per-dimension
         # BUFFER and `max_log_std` a scalar, and `torch.clamp` refuses that mix.
         log_std = self.log_std.clamp(max=self.max_log_std)
@@ -364,10 +502,24 @@ class SwarmActor(nn.Module):
 
         The action is returned unclipped and its log-probability is the
         log-probability of *that* value -- see the class docstring.
+
+        ⚠️ **gSDE cannot go through `rsample`.** Marginally the two agree -- that
+        is the whole point of the closed form in `_init_sde` -- but `rsample`
+        draws independently every call, which throws away the temporal
+        correlation gSDE exists to create. The noise has to come from the carried
+        `W`, and the log-probability is then read off the same marginal Gaussian
+        `evaluate` will use.
         """
-        dist = self.distribution(flat)
-        action = dist.rsample()
-        return action, dist.log_prob(action).sum(-1), dist.mean
+        if not self.sde:
+            dist = self.distribution(flat)
+            action = dist.rsample()
+            return action, dist.log_prob(action).sum(-1), dist.mean
+        latent = self._latent(flat)
+        raw = self.head(latent)
+        mean = torch.tanh(raw) if self.tanh_mean else raw
+        std = torch.maximum(self._sde_std(latent), self.min_log_std.exp())
+        action = mean + self._sde_noise(latent)
+        return action, Normal(mean, std).log_prob(action).sum(-1), mean
 
     def evaluate(self, flat: Tensor, actions: Tensor) -> tuple[Tensor, Tensor]:
         """`(log_prob, entropy)` of `actions` under the current parameters."""

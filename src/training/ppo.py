@@ -253,6 +253,12 @@ class PPOConfig:
     #: Bounds for the adaptive rule, so it cannot run away in either direction.
     lr_min: float = 1e-5
     lr_max: float = 1e-2
+    #: How often gSDE re-draws its noise matrix, in env-steps. ⛔ Read only when
+    #: the actor has `sde=True`; the exploration distribution itself lives in
+    #: `SwarmActor._init_sde`, because it is a property of the policy and not of
+    #: the algorithm. 📏 4 is `rl-baselines3-zoo`'s value for both of its tuned
+    #: gSDE entries.
+    sde_sample_freq: int = 4
     #: 🔒 Never False in a reported run. See the module docstring.
     time_limit_bootstrap: bool = True
     normalise_values: bool = True
@@ -462,7 +468,17 @@ class PPOTrainer:
         """Fill the buffer. Returns `last_values`, `(rows,)`, in raw units."""
         b, n = self.env.cfg.num_envs, self.env.cfg.num_drones
         a = self.buf["action"].shape[-1]
+        # ⛔ Zero unless gSDE is on, and then the ONLY thing that changes in this
+        # loop is a periodic `reset_noise`. When it is off the branch is not taken
+        # and no RNG is consumed, which is what keeps every inherited number
+        # reproducible bit for bit.
+        sde_freq = self.cfg.sde_sample_freq if getattr(self.actor, "sde", False) else 0
         for t in range(self.cfg.rollouts):
+            # 🔒 `t == 0` included: every rollout opens with a fresh matrix, so a
+            # policy update never carries exploration drawn against the previous
+            # parameters.
+            if sde_freq and t % sde_freq == 0:
+                self.actor.reset_noise(self.rows)
             if self.curriculum is not None:
                 self.curriculum.update(self.timestep)
 
@@ -690,8 +706,20 @@ class PPOTrainer:
                 # x / y, so z has nothing to explore and *should* collapse while
                 # x and y must not. One column each is the only way to see that
                 # happen, and `--min-log-std` is already per-dimension.
-                sigma = self.actor.log_std.detach().clamp(max=self.actor.max_log_std)
-                sigma = torch.maximum(sigma, self.actor.min_log_std).exp()
+                #
+                # ☠️ **Under gSDE the deviation is a function of the STATE**, so
+                # `actor.log_std` is not what the policy explores at -- it is an
+                # unused parameter. Reading it there would report a number the
+                # policy never used, which is the exact shape of failure this
+                # column was added to prevent. The gSDE branch pays one extra
+                # forward on the minibatch to get the real thing; the default
+                # path is untouched and costs nothing.
+                with torch.no_grad():
+                    if getattr(self.actor, "sde", False):
+                        sigma = self.actor(obs[idx])[1].exp().mean(dim=0)
+                    else:
+                        sigma = self.actor.log_std.clamp(max=self.actor.max_log_std)
+                        sigma = torch.maximum(sigma, self.actor.min_log_std).exp()
                 self._accumulate({f"sigma_{_axis(i)}": sigma[i] for i in range(sigma.numel())})
                 self._accumulate(
                     {
@@ -822,6 +850,15 @@ class PPOTrainer:
                 # function and `load_state_dict` raises nothing.
                 "tanh_mean": bool(getattr(self.actor, "tanh_mean", True)),
                 "layer_norm": bool(getattr(self.actor, "layer_norm", False)),
+                # 🔒 Same reason as `tanh_mean`: gSDE adds `sde_log_std` to the
+                # state dict, so a loader that misses this flag builds an actor
+                # without it and `load_state_dict` raises `Unexpected key(s)`.
+                # ⚠️ It ALSO changes what the network computes -- `forward`'s
+                # second return becomes state-dependent -- so a loader that
+                # somehow got the shapes right would still score a different
+                # function.
+                "sde": bool(getattr(self.actor, "sde", False)),
+                "sde_sample_freq": int(getattr(self.actor, "sde_sample_freq", 4)),
                 "timestep": self.timestep,
                 **(extra or {}),
             },

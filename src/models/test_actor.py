@@ -216,7 +216,13 @@ def test_every_new_knob_ships_off_so_the_default_build_is_the_inherited_one():
     actor = SwarmActor()
     assert actor.tanh_mean is True
     assert actor.layer_norm is False
+    assert actor.sde is False
     assert not any(isinstance(m, torch.nn.LayerNorm) for m in actor.modules())
+    # ☠️ gSDE adds a PARAMETER. If it existed unconditionally it would join
+    # `state_dict()` and break every checkpoint in `runs/` with `Missing key(s)`,
+    # which is exactly what `min_log_std` did.
+    assert "sde_log_std" not in actor.state_dict()
+    assert not hasattr(actor, "sde_log_std")
 
     torch.manual_seed(0)
     plain = SwarmActor(architecture="gnn")
@@ -305,3 +311,168 @@ def test_layer_norm_is_inserted_before_each_hidden_activation_and_nowhere_else()
     assert isinstance(layers[-1], torch.nn.Linear), "no norm or activation after the output"
     norms = [i for i, m in enumerate(layers) if isinstance(m, torch.nn.LayerNorm)]
     assert norms and all(isinstance(layers[i + 1], torch.nn.Tanh) for i in norms)
+
+
+# --------------------------------------------------------------------------- #
+# gSDE -- Raffin, Kober, Stulp (2021), behind `sde=False`
+# --------------------------------------------------------------------------- #
+
+
+def test_gsde_off_is_bit_identical_to_the_inherited_actor():
+    """🔒 The standard `results/capability_gates.md` sets for anything new: it
+    must be provably incapable of having moved an inherited number.
+
+    ⚠️ Parameters AND outputs, because `forward` was restructured to expose the
+    trunk's latent to the gSDE path. A refactor that changed the op order would
+    still pass a parameter check.
+    """
+    torch.manual_seed(0)
+    plain = SwarmActor(architecture="gnn")
+    torch.manual_seed(0)
+    explicit = SwarmActor(architecture="gnn", sde=False)
+    for a, b in zip(plain.parameters(), explicit.parameters(), strict=True):
+        assert torch.equal(a, b)
+    assert plain.state_dict().keys() == explicit.state_dict().keys()
+
+    flat = torch.randn(9, FLAT_DIM)
+    for got, want in zip(explicit(flat), plain(flat), strict=True):
+        assert torch.equal(got, want)
+
+    # And the sample: same seed, same stream, same action. gSDE off must not
+    # consume RNG differently.
+    torch.manual_seed(1)
+    a0 = plain.act(flat)
+    torch.manual_seed(1)
+    a1 = explicit.act(flat)
+    for got, want in zip(a1, a0, strict=True):
+        assert torch.equal(got, want)
+
+
+def test_gsde_reset_noise_is_a_no_op_and_consumes_no_rng_when_off():
+    """⛔ `PPOTrainer.collect` guards the call, but the actor must be safe anyway:
+    a stray `reset_noise` that drew from the global stream would change which
+    episodes every later `rsample` sees."""
+    actor = SwarmActor()
+    before = torch.randn(4)
+    torch.manual_seed(3)
+    reference = torch.randn(4)
+    torch.manual_seed(3)
+    actor.reset_noise(16)
+    assert actor.exploration_mat is None
+    assert torch.equal(torch.randn(4), reference)
+    del before
+
+
+def test_gsde_std_is_the_closed_form_sum_over_the_latent():
+    """🔒 `sigma_hat_j(s)^2 = sum_i phi_i(s)^2 sigma_ij^2`.
+
+    This identity is the whole reason gSDE is safe behind a PPO ratio: it makes
+    `a | s` an ordinary diagonal Gaussian, so `evaluate` can recompute the
+    density from the state without remembering which noise matrix produced the
+    action -- which is what lets a SHUFFLED minibatch work at all.
+    """
+    torch.manual_seed(0)
+    actor = SwarmActor(architecture="gnn", sde=True)
+    flat = torch.randn(6, FLAT_DIM)
+    latent = actor._latent(flat)
+    sigma = actor.sde_log_std.exp()
+    expected = (latent.pow(2) @ sigma.pow(2)).sqrt()
+    _, log_std = actor(flat)
+    assert torch.allclose(log_std.exp(), expected, atol=1e-6)
+    # State-dependent means it must actually differ across rows.
+    assert log_std.std(dim=0).max() > 1e-4
+
+
+def test_gsde_noise_is_temporally_correlated_until_the_matrix_is_redrawn():
+    """⭐ The property gSDE exists for, and the one white noise does not have.
+
+    Same state, same `W` -> the *same* perturbation, every time. That is what
+    makes the exploration smooth in state rather than a fresh jitter each step.
+    """
+    torch.manual_seed(0)
+    actor = SwarmActor(architecture="gnn", sde=True)
+    flat = torch.randn(6, FLAT_DIM)
+
+    actor.reset_noise(6)
+    first, _, mean = actor.act(flat)
+    again, _, _ = actor.act(flat)
+    assert torch.equal(first, again), "same state and same W must give the same action"
+    assert not torch.equal(first, mean), "the noise must be non-zero"
+
+    actor.reset_noise(6)
+    after = actor.act(flat)[0]
+    assert not torch.equal(first, after), "a redraw must move the noise"
+
+    # ⛔ The contrast: the ordinary actor re-jitters on every call.
+    torch.manual_seed(0)
+    white = SwarmActor(architecture="gnn")
+    assert not torch.equal(white.act(flat)[0], white.act(flat)[0])
+
+
+def test_gsde_log_prob_matches_the_empirical_distribution_of_its_own_samples():
+    """☠️ The failure mode this rules out is the FOURTH skrl bug's shape: a
+    sampler and a density that disagree.
+
+    skrl clipped the sample and scored it under the unclipped Normal, and the
+    deviation rose monotonically with no entropy bonus anywhere. Here the sampler
+    is `mu + phi'W` and the density is `N(mu, sigma_hat)`; they agree only if the
+    closed form is right, so this checks the marginal empirically.
+    """
+    torch.manual_seed(0)
+    actor = SwarmActor(architecture="gnn", sde=True, initial_log_std=0.0)
+    flat = torch.randn(1, FLAT_DIM).repeat(4096, 1)
+
+    actor.reset_noise(4096)  # one matrix per row, so the 4096 rows are 4096 draws
+    action, log_prob, mean = actor.act(flat)
+    empirical = (action - mean).std(dim=0)
+    _, log_std = actor(flat)
+    assert torch.allclose(empirical, log_std[0].exp(), rtol=0.06), (
+        f"empirical {empirical.tolist()} vs closed form {log_std[0].exp().tolist()}"
+    )
+
+    # And the reported log-prob is the density of the action that was sampled.
+    expected = torch.distributions.Normal(mean, log_std.exp()).log_prob(action).sum(-1)
+    assert torch.allclose(log_prob, expected, atol=1e-5)
+
+
+def test_gsde_evaluate_needs_no_memory_of_the_matrix_that_sampled():
+    """🔒 The minibatch is shuffled and the noise matrix is long gone by update
+    time. `evaluate` must reconstruct the density from the state alone."""
+    torch.manual_seed(0)
+    actor = SwarmActor(architecture="gnn", sde=True)
+    flat = torch.randn(8, FLAT_DIM)
+    actor.reset_noise(8)
+    action, log_prob, _ = actor.act(flat)
+
+    actor.reset_noise(8)  # a completely different W
+    again, _ = actor.evaluate(flat, action)
+    assert torch.allclose(log_prob, again, atol=1e-6)
+
+
+def test_the_min_log_std_floor_binds_the_effective_gsde_deviation():
+    """⚠️ Under gSDE the deviation is state-dependent, so the floor has to hold on
+    `sigma_hat(s)` -- the quantity the policy actually explores at -- and not on
+    the matrix, whose entries are ~sqrt(latent) smaller by construction."""
+    torch.manual_seed(0)
+    actor = SwarmActor(architecture="gnn", sde=True, initial_log_std=-8.0, min_log_std=-1.0)
+    _, log_std = actor(torch.randn(12, FLAT_DIM))
+    assert torch.allclose(log_std, torch.full_like(log_std, -1.0), atol=1e-6)
+
+
+def test_a_gsde_checkpoint_round_trips_through_the_loader_contract():
+    """☠️ `sde_log_std` is in `state_dict()`, so a loader that misses the flag
+    fails with `Unexpected key(s)`. `PPOTrainer.save` writes `sde` at the top
+    level for exactly the reason `tanh_mean` and `obs_history` are there."""
+    torch.manual_seed(0)
+    trained = SwarmActor(architecture="deepsets", sde=True)
+    blob = trained.state_dict()
+
+    torch.manual_seed(1)
+    reloaded = SwarmActor(architecture="deepsets", sde=True)
+    reloaded.load_state_dict(blob)
+    flat = torch.randn(5, FLAT_DIM)
+    for got, want in zip(reloaded(flat), trained(flat), strict=True):
+        assert torch.equal(got, want)
+
+    with pytest.raises(RuntimeError, match="Unexpected key"):
+        SwarmActor(architecture="deepsets").load_state_dict(blob)

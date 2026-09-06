@@ -135,6 +135,10 @@ def load_actor(path: Path, env: BatchedSwarmEnv) -> SwarmActor:
         # still loads as the network it was trained as.
         tanh_mean=blob.get("tanh_mean", True),
         layer_norm=blob.get("layer_norm", False),
+        # ⚠️ gSDE adds `sde_log_std` to the state dict, so missing this flag is a
+        # `load_state_dict` failure -- and, if the shapes ever lined up anyway, a
+        # different function. Default False = the pre-change behaviour.
+        sde=blob.get("sde", False),
     ).to(env.device)
     actor.load_state_dict(blob["policy"])
     actor.eval()

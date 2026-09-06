@@ -345,6 +345,24 @@ def build_parser() -> argparse.ArgumentParser:
         "obstacle that made scripts/bc_init.py clip its targets to +-0.995",
     )
     ap.add_argument(
+        "--sde",
+        action="store_true",
+        help="generalized State-Dependent Exploration (Raffin et al. 2021). ⚠️ The "
+        "noise becomes a smooth function of the state and is re-drawn only every "
+        "--sde-sample-freq steps, instead of white noise drawn fresh every step. "
+        "📏 Motivated by results/trainer_benchmark.md: MountainCarContinuous-v0 is "
+        "unsolvable for this trainer without it (~0 against a published 88.3) and "
+        "solvable with it. ⛔ Whether it helps the RELAY is untested -- it is an "
+        "arm, not a default",
+    )
+    ap.add_argument(
+        "--sde-sample-freq",
+        type=int,
+        default=4,
+        help="env-steps between gSDE noise re-draws. 📏 4 in both tuned "
+        "rl-baselines3-zoo gSDE entries",
+    )
+    ap.add_argument(
         "--orthogonal-init",
         action="store_true",
         help="the PPO reference initialisation (orthogonal, gain sqrt(2); policy "
@@ -490,6 +508,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         obs_history=a.obs_history,
         tanh_mean=not a.no_tanh_mean,
         orthogonal_init=a.orthogonal_init,
+        sde=a.sde,
+        sde_sample_freq=a.sde_sample_freq,
         layer_norm=a.layer_norm,
     ).to(a.device)
     init_from = None
@@ -511,6 +531,7 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         learning_epochs=a.epochs,
         gae_lambda=a.gae_lambda,
         grad_norm_clip=a.grad_norm_clip,
+        sde_sample_freq=a.sde_sample_freq,
         mini_batches=mini_batches,
         learning_rate=a.lr,
         entropy_loss_scale=a.entropy,
@@ -572,6 +593,8 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         "initial_log_std": a.initial_log_std,
         "tanh_mean": not a.no_tanh_mean,
         "orthogonal_init": a.orthogonal_init,
+        "sde": a.sde,
+        "sde_sample_freq": a.sde_sample_freq,
         "layer_norm": a.layer_norm,
         "entropy_loss_scale": a.entropy,
         "shuffle_minibatches": not a.no_shuffle,

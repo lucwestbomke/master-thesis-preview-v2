@@ -120,6 +120,8 @@ class BenchActor(SwarmActor):
         tanh_mean: bool = False,
         orthogonal_init: bool = True,
         head_gain: float = 0.01,
+        sde: bool = False,
+        sde_sample_freq: int = 4,
     ):
         nn.Module.__init__(self)
         self.architecture = "bench-mlp"
@@ -142,6 +144,10 @@ class BenchActor(SwarmActor):
             "min_log_std", torch.full((act_dim,), float(min_log_std)), persistent=False
         )
         self.max_log_std = float(max_log_std)
+        # 🔒 The same method the mission actor calls, with this task's action
+        # width. gSDE is a property of the distribution, so it has to be the same
+        # code here or the benchmark validates something else.
+        self._init_sde(sde, sde_sample_freq, initial_log_std, act_dim)
         if orthogonal_init:
             orthogonal_init_(self.trunk, math.sqrt(2.0))
             nn.init.orthogonal_(self.head.weight, head_gain)
@@ -505,7 +511,9 @@ class Task:
     hidden: int = 64
     critic_hidden: int = 64
     initial_log_std: float = 0.0
+    orthogonal_init: bool = True
     eval_episodes: int = 100
+    sde: bool = False
     gated: bool = True
     reference: dict[str, Any] = field(default_factory=dict)
 
@@ -618,6 +626,10 @@ TASKS: dict[str, Task] = {
         ),
         total_timesteps=20_000,
         initial_log_std=-3.29,
+        # 📏 The tuned entry sets `ortho_init: False`. ⚠️ Missed in Phase 0 and
+        # corrected here: under gSDE the initialisation is not cosmetic, because
+        # the effective deviation scales with `||phi(s)||`.
+        orthogonal_init=False,
         eval_episodes=100,
         gated=False,
         reference={
@@ -733,6 +745,9 @@ def run_one(
         env.act_dim,
         hidden=task.hidden,
         initial_log_std=task.initial_log_std,
+        orthogonal_init=task.orthogonal_init,
+        sde=task.sde,
+        sde_sample_freq=task.ppo.sde_sample_freq,
     ).to(device)
     critic = SwarmCritic(env.state_dim, hidden=task.critic_hidden).to(device)
 
@@ -755,6 +770,7 @@ def run_one(
     row = {
         "task": task.name,
         "control": control,
+        "sde": task.sde,
         "seed": seed,
         "device": device,
         "timesteps": trainer.timestep,
@@ -854,6 +870,24 @@ def main() -> None:
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     ap.add_argument("--device", default="cpu")
     ap.add_argument(
+        "--sde",
+        default=None,
+        choices=["on", "off"],
+        help="override the task's gSDE setting. ⭐ The point of the override is the "
+        "MATCHED PAIR: `--sde on` and `--sde off` at an identical "
+        "`initial_log_std` isolate noise *correlation* from noise *magnitude*, "
+        "which comparing against a published gSDE config alone cannot",
+    )
+    ap.add_argument(
+        "--initial-log-std",
+        type=float,
+        default=None,
+        help="override the task's initial exploration scale. ⚠️ Under gSDE this "
+        "project's convention is that it names the EFFECTIVE deviation, not the "
+        "noise-matrix entries -- see `SwarmActor._init_sde` -- so it is not "
+        "interchangeable with SB3's `log_std_init`",
+    )
+    ap.add_argument(
         "--control",
         default="none",
         choices=["none", "frozen"],
@@ -864,6 +898,10 @@ def main() -> None:
     a = ap.parse_args()
 
     task = TASKS[a.task]
+    if a.sde is not None:
+        task = replace(task, sde=(a.sde == "on"))
+    if a.initial_log_std is not None:
+        task = replace(task, initial_log_std=a.initial_log_std)
     rows = [run_one(task, seed, a.device, control=a.control) for seed in a.seeds]
     scores = sorted(r["eval_return_mean"] for r in rows)
     disc = sorted(r["eval_discounted_mean"] for r in rows)
@@ -880,6 +918,8 @@ def main() -> None:
         "reference": task.reference,
         "gated": task.gated,
         "control": a.control,
+        "sde": task.sde,
+        "initial_log_std": task.initial_log_std,
     }
     if "normalised_score" in rows[0]:
         norms = sorted(r["normalised_score"] for r in rows)

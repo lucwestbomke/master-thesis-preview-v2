@@ -113,6 +113,8 @@ def rollout(a, seed: int) -> tuple[np.ndarray, np.ndarray]:
             # still loads as the network it was trained as.
             tanh_mean=blob.get("tanh_mean", True),
             layer_norm=blob.get("layer_norm", False),
+            # ⚠️ See `scripts/eval_policy.py`: gSDE changes the state dict.
+            sde=blob.get("sde", False),
         ).to(env.device)
         actor.load_state_dict(blob["policy"])
         actor.eval()

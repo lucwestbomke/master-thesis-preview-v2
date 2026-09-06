@@ -69,6 +69,7 @@ def build(architecture: str, checkpoint: Path | None) -> tuple[SwarmActor, int]:
         obs_history=frames,
         tanh_mean=bool(blob.get("tanh_mean", True)),
         layer_norm=bool(blob.get("layer_norm", False)),
+        sde=bool(blob.get("sde", False)),
     )
     actor.load_state_dict(blob["policy"])
     return actor.eval(), FLAT_DIM * frames

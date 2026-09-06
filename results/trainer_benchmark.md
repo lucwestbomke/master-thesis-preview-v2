@@ -339,3 +339,77 @@ weakened by an implementation doubt.
 diagnosis is about `approx_kl` at 0.002–0.004 and ~5,888 Adam steps, and this file
 says nothing about either — it says the code that would consume a larger budget is
 correct. 📏 Gate D already ran that experiment and returned REGRESSION.
+
+---
+
+# Addendum — does gSDE work, and does *correlation* do the work? Declared 2026-09-06 before the runs
+
+🔒 **A new declaration under the same standard**, appended rather than edited into
+the section above. ⛔ Nothing above changes: the Phase 0 verdict stands and the
+`mountaincar` row above remains the no-gSDE measurement it was declared as.
+
+## Why
+
+📏 Phase 0 left one arm failing at ≈ 0 against a published **88.343 ± 2.572**, and
+named the difference: the tuned entry uses **gSDE** and this trainer had no such
+distribution. gSDE is now implemented in `SwarmActor` (`_init_sde`), OFF by
+default. This addendum asks whether the implementation does what gSDE is for.
+
+⚠️ **Beating the published number is not the interesting question, and on its own
+it would not be evidence about the mechanism.** gSDE changes *two* things at once
+against the shipped Gaussian: the noise becomes temporally correlated, **and** its
+effective magnitude changes, because `sigma_hat(s) = ||phi(s)|| * sigma` rather
+than `sigma`. A win against the reference config alone cannot separate them.
+
+## 🔒 The design: a 2 × 2, not a comparison against a paper
+
+**`{gSDE on, gSDE off} × {initial_log_std −3.29, −1.0}`**, 5 seeds each, all four
+cells reported. Everything else is the tuned `MountainCarContinuous-v0` entry:
+`normalize: true`, `gamma 0.9999`, `gae_lambda 0.9`, `lr 7.77e-5`, `clip_range
+0.1`, `ent_coef 0.00429`, `vf_coef 0.19`, `max_grad_norm 5`, `n_epochs 10`,
+`ortho_init False`, 20 k steps.
+
+* **The gSDE main effect at a fixed `initial_log_std`** is the readout. Same
+  nominal scale, same everything else, one factor changed — so a difference is
+  attributable to *correlation*.
+* **Two levels of the scale**, because `initial_log_std` does **not** mean the
+  same thing in the two arms and cannot be made to. 📏 `||phi(s)|| = 2.10` on a
+  64-wide trunk, so the gSDE arm's effective deviation is ~2.1× its nominal one
+  while the Gaussian arm's is exactly nominal. ⛔ Running one level would confound
+  the main effect with that offset; two levels bracket it.
+* **`sigma_x` is reported for every cell.** It is now read from a real forward
+  pass under gSDE rather than from a parameter, so the *effective* deviation each
+  cell actually explored at is on the record and the confound is measurable rather
+  than argued about.
+
+☠️ **A correction made during construction, before this was declared.** The first
+version of `_init_sde` subtracted `0.5*log(latent_dim)` from `initial_log_std` so
+the flag would keep naming the effective deviation. 📏 That assumed
+`||phi||^2 ~ latent_dim`; the measured `||phi||` is **2.10 against an assumed
+8.0**, and it is not a constant — it moves with the task and with training. The
+correction is removed and the convention now matches the reference
+implementation, with the diagnostic carrying the truth instead.
+
+## 🔒 The decision rule
+
+⚠️ Branches partition the real line. Δ is median `eval_return_mean` over 5 seeds,
+gSDE on minus gSDE off, **at the same `initial_log_std`**.
+
+| branch | rule | reading |
+|---|---|---|
+| ✅ **MECHANISM CONFIRMED** | Δ ≥ **+50** at either level, worst-seed Δ ≥ 0 | correlated exploration solves a task white noise cannot, at matched scale. The implementation does what gSDE is for |
+| ⚠️ **PARTIAL** | Δ ≥ **+10** at either level | it reaches the goal sometimes. Correlation helps; the published 88.3 needs something else this reproduction does not have |
+| ⛔ **NULL** | \|Δ\| < 10 at both levels | ⭐ **A real result, and the one that matters for the relay**: gSDE is not the difference between 0 and 88.3 here, so either the reproduction is missing something else, or the mechanism does not transfer. ⛔ In that case gSDE does **not** go to the mission on this evidence |
+| ☠️ **REGRESSION** | Δ ≤ **−10** at either level | report it |
+
+🔒 **What this gate does NOT license, whatever it says.** ⛔ A pass is evidence
+that the *implementation* is correct and that correlated noise can matter on
+*some* task. It is **not** evidence that gSDE helps the relay. That would be a
+Gate, on CUDA, at 5 seeds, against B0 through `evaluate.py` — and this project's
+base rate for a new knob is eight pre-declared nulls, Gate A, Gate D and Gate E.
+
+## 🔒 Reported whatever the branch
+
+Per cell: median / worst / per-seed `eval_return_mean`, `sigma_x` (the
+**effective** deviation), `approx_kl`, `clip_fraction`, `grad_kept`,
+`explained_variance`, `entropy`, and total Adam steps.
