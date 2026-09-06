@@ -413,3 +413,38 @@ base rate for a new knob is eight pre-declared nulls, Gate A, Gate D and Gate E.
 Per cell: median / worst / per-seed `eval_return_mean`, `sigma_x` (the
 **effective** deviation), `approx_kl`, `clip_fraction`, `grad_kept`,
 `explained_variance`, `entropy`, and total Adam steps.
+
+---
+
+## ⚠️ Amendment, declared 2026-09-06 after reading `sigma_x` and BEFORE the control run
+
+🔒 **Recorded rather than silently replacing the design above.** The 2 × 2 ran and
+its rule resolves cleanly. But its **stated purpose** — *"a difference is
+attributable to correlation"* — is **not delivered by the cells as run**, and the
+column added to check that is what shows it:
+
+| cell | effective `sigma_x` |
+|---|---|
+| `−3.29`, gSDE off | 0.0325 – 0.0373 |
+| `−3.29`, gSDE on | 0.0190 – 0.0407 |
+| `−1.0`, gSDE off | **0.3417 – 0.3499** |
+| `−1.0`, gSDE on | **0.4323 – 0.7881** |
+
+⛔ At the level where gSDE wins, the two arms are **not at matched effective
+scale**: gSDE explored 1.3 – 2.3× wider. The declaration predicted this offset
+and claimed two levels would "bracket" it. 📏 They do not — there is no gSDE-off
+cell anywhere in the 0.43 – 0.79 band, so *magnitude* remains an unexcluded
+explanation for the win. The bracketing argument was wrong and this amendment
+says so.
+
+### 🔒 The control, declared before it runs
+
+**gSDE OFF at three scales spanning the gSDE arm's measured band**:
+`initial_log_std ∈ {−0.8, −0.5, −0.25}`, i.e. `sigma ≈ 0.449 / 0.607 / 0.779`.
+5 seeds each, everything else identical.
+
+| branch | rule | reading |
+|---|---|---|
+| ✅ **CORRELATION** | every gSDE-off cell's median stays below **+10** | white noise fails across the whole band the gSDE arm explored at, so the win is not magnitude |
+| ⛔ **MAGNITUDE** | any gSDE-off cell's median reaches **+48.6** (the gSDE arm's *worst* seed) | ☠️ the 2 × 2's win is a scale effect and gSDE's correlation is not doing the work. The MECHANISM CONFIRMED verdict above would then be **correct on its rule and wrong in its reading**, and it would be recorded that way |
+| ⚠️ **PARTIAL** | any cell's median in [+10, +48.6) | white noise at the right scale gets part of the way. Report both and attribute nothing |

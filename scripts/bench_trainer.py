@@ -799,6 +799,13 @@ def run_one(
         "entropy",
         "log_std",
         "episodic_return",
+        # 🔒 The EFFECTIVE deviation. Under gSDE `log_std` is an unused parameter
+        # and `sigma_*` is read off a real forward pass, which is the only reason
+        # the two arms of the 2 x 2 can be compared at matched exploration.
+        "sigma_x",
+        "sigma_y",
+        "sigma_z",
+        "sat_any",
     ):
         if key in tail:
             row[key] = round(float(tail[key]), 6)
