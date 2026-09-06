@@ -10,6 +10,13 @@ every number in `results/` shares. 🔒 Four of its five lines are untouched and
 §3 says which. The amendment is recorded here rather than made silently, for the
 same reason §6 keeps the refuted framings.
 
+⭐ **Restructured 2026-09-06.** Four objectives became **three research
+questions**: the old RQ2 (*where does an adversary's power come from*) is folded
+into RQ1 as a supporting result, and the capability programme stopped being an
+objective and became §3, **the instrument**. ⛔ **No scientific content changed** —
+no number, no rule, no verdict. The reframing is recorded in §6 rather than
+applied silently, for the same reason the refuted framings are kept there.
+
 `docs/INHERITED.md` records *what is already known*. `results/` records *what has
 been measured, with the rule declared before each run*. **This file records what
 happens next.**
@@ -17,6 +24,19 @@ happens next.**
 ---
 
 ## 1. The claim
+
+### Working title
+
+> **The cost of adaptation: measuring and removing exploitability in multi-agent
+> relay under directed jamming.**
+
+### Goal
+
+> Show that a controller's own repositioning loop is what makes it exploitable,
+> measure how that cost scales, and demonstrate that adversarial co-training
+> removes it.
+
+### The claim itself
 
 > 🔍 **Exploitability decomposes into damage and a control loop:**
 > `gap = f(threshold proximity) + g(loop AMPLITUDE)`.
@@ -100,49 +120,128 @@ pair.
 
 ---
 
-## 2. The objectives
+## 2. The research questions
 
-### RQ1 — Is exploitability a cost of adaptivity? — 🔶 **supported, n = 1 pair**
+⭐ **Restructured 2026-09-06.** There were four objectives; there are now three
+questions. ⛔ Nothing measured changed — what changed is which numbers are
+**claims** and which are **support**.
 
-📏 The geodesic/B0 pair above, disjoint, with the mechanism named and priced.
-⚠️ It is **one controlled pair**. §7 runs 1 and 2 turn it into a dose–response
-curve and a constructive test, both with **zero training**.
+| old | new home |
+|---|---|
+| RQ1 — is exploitability a cost of adaptivity | **RQ1**, unchanged in substance |
+| RQ2 — where does an adversary's power come from | **folded into RQ1** as a supporting result. It justifies the adversary ladder rather than standing alone; every number and link is kept |
+| RQ3 — does co-training reduce exploitability | **RQ2** |
+| RQ4 — does it survive the airframe | **RQ3** |
+| §3 — the capability question | ⛔ **no longer an objective.** It is §3, **the instrument** |
 
-### RQ2 — Where does an adversary's power come from? — ✅ **answered**
+⚠️ **`results/` predates this renumbering and is never edited.** A file there that
+says *"RQ3"* for co-training means what this section now calls **RQ2**, and
+[`rq2_ladder.md`](results/rq2_ladder.md) keeps the predecessor's numbering
+entirely — its "RQ2" is the **architecture ladder**. Read the question, not the
+number. Terms are defined once, in [`docs/GLOSSARY.md`](docs/GLOSSARY.md).
 
-📏 5 seeds × 128 episodes: **directionality −10.6 pp, adaptivity −2.9 pp** on B0.
-An adversary's power is overwhelmingly about *where the energy goes*.
+### RQ1 — Does adaptation create exploitability, and how does it scale? — 🔶 **supported**
+
+> Do controllers that reposition in response to the attacked quantity lose more
+> capability to an *aiming* adversary than controllers that do not — and does the
+> loss scale with how far they are willing to reposition?
+
+📏 **The evidence, all of it set out in §1:**
+
+| | |
+|---|---|
+| the **controlled pair** | `b0-geodesic` **6.39 pp** [5.68 – 6.54] against `B0` **13.24 pp** [11.42 – 13.58] — **disjoint**, same code path, same stations. [`frontier.md`](results/frontier.md) |
+| the **dose–response** | `repair_amplitude_m` 0 / 50 / 100 / 200 m → **7.94 → 13.24 pp**, disjoint endpoints. [`repair_gates.md`](results/repair_gates.md) |
+| the null on the loop's **target** | clearance **13.37** against capacity **13.24**, overlapping — the adversary drives the loop *whatever* it looks at. Same file |
+| the **mechanism**, named | degrade → repair → re-optimise → **chase**. `b0-geodesic` returns from `_update_repair` immediately and has half the gap; `random` adapts to nothing and has 2.05 pp |
+
+✅ **Gate B is RQ1's confirmation against a co-trained comparison**, and it
+survived its own `capable_no_division` control: B0's gap moves **0.39 pp**
+(13.24 → 12.85) while the learned policies' collapse to **0.44 – 5.46 pp**.
+⚠️ Half the confound survives — *"a longer chain has more links for the beam to
+find"* is **not** closed, and no policy in this project supplies the hop-matched
+comparison that would close it. [`gate_b.md`](results/gate_b.md).
+
+#### Supporting result — where an adversary's power comes from. ✅ **answered**
+
+⭐ **This was RQ2 until 2026-09-06.** It is kept in full and demoted to support:
+it is what justifies the adversary ladder in §4, not a claim of its own.
+
+📏 5 seeds × 128 episodes, CUDA: **directionality −10.6 pp, adaptivity −2.9 pp**
+on B0. An adversary's power is overwhelmingly about *where the energy goes*, not
+about re-deciding where it goes. ⚠️ This **replaced** a non-monotonicity claim
+that came from one CPU seed and did not replicate: the ladder is monotone,
+J3B > J3 > J2, on **5/5** paired seeds.
 [`results/j_ladder.md`](results/j_ladder.md).
 
-### RQ3 — Does co-training reduce the exploitability of a learned loop? — 🔶 **effect measured, mechanism untested**
+#### ⚠️ Open — and it needs no training
+
+📏 The dose–response is measured on **one map**. Reproducing it in a second,
+**minimal abstract relay environment** — scripted controllers only, no learned
+policy — is what turns `n = 1 environment` from a limitation into an
+**external-validity argument**. §7 item 4, §8.
+
+### RQ2 — Can adversarial co-training remove the cost without losing capability? — 🔶 **effect measured, mechanism untested**
+
+> If the loop is what makes a controller exploitable, can the loop be kept but
+> trained so that it cannot be led?
 
 📏 Co-training moves the learned policies **down** the exploitability axis:
 11.12 → 7.51 and 10.45 → 7.29, at unchanged capability and unchanged chain length,
-with **no cost on the clean rung** (+0.3 pp at J1). The off-diagonal shows
+with **no cost on the clean rung** (+0.3 pp at J1). The **off-diagonal** shows
 robustness rather than opponent-overfit — `advtrain-J2` beats `advtrain-J3B` *on
 J3B*. [`results/gate_b.md`](results/gate_b.md).
 
 ⚠️ **Why it works is untested.** The leading candidate is **path redundancy**:
 `routing.py` picks the widest *single* path and the jammer has *one* beam, so a
 second threshold-clearing, edge-disjoint path would make the beam's kill
-recoverable. ⛔ **No metric for this exists** — §7 run 3.
-⛔ **J4**, a learned jammer, is still not built.
+recoverable. ⛔ **No metric for this exists** — §7 item 2, computable from the
+capacity matrix `routing.py` already builds.
+⛔ **J4**, a learned jammer, is still not built, so the result holds against
+**scripted** adversaries only. §8 carries the fallback.
 
-### RQ4 — Does it survive the airframe? — ⛔ **not started**
+### RQ3 — Does it survive deployment? — ⛔ **not started**
 
-ONNX → TensorRT on a Jetson Orin Nano: latency, p99 jitter, power against the
-400 ms control period, and *does quantisation degrade coordination more than
-control?* Gate C. 🔧 Pure Python. Hardware is in hand; **the export risk is
-unretired.**
+ONNX → TensorRT on a Jetson Orin Nano: latency, p99 jitter and power against the
+400 ms control period. Then: *does quantisation degrade **coordination** more than
+it degrades **control**?*
+
+* **coordination** = role structure and observer geometry — `role_entropy`,
+  `observer_range_m`;
+* **control** = basic competence — `mission_capable`, on-station behaviour.
+
+🔒 **Gate C's declaration (§5) already covers this and is reproduced verbatim,
+not rewritten.** 🔧 Pure Python. Hardware is in hand; **the export risk is
+unretired**, which is why §7 puts the local export first.
 
 ---
 
-## 3. The capability question — re-opened, on named grounds
+## 3. The instrument — a capable learned policy
 
-⚠️ **This section said "closed. Do not re-open." until 2026-09-04.** It was
-re-opened on a named confound in the optimiser, and ⭐ **on 2026-09-06 that
-confound was measured and refuted** — see below. Four of the five lines were
-untouched throughout; the fifth is now restored.
+⭐ **Retitled 2026-09-06, and it is no longer a research question.** The
+capability programme is an **instrument**. The justification is already in this
+document: every learned policy here sits within **1.1 Mbps of the 15 Mbps
+threshold**, where the adversary's *damage* term dominates and **no behavioural
+response is being measured at all**. A capable learned policy is therefore a
+**prerequisite for testing RQ1 on learned controllers**, and nothing more.
+
+> 🔒 **The thesis does not depend on this section.** RQ1's evidence is a
+> *scripted* controlled pair. If Gates D–F all null, RQ1, RQ2 and RQ3 stand
+> unchanged and the paper reports that the scripted baseline remains the
+> strongest policy.
+
+> 🔒 **Gates D–F are budgeted at three weeks.** At the end of that budget the
+> programme stops regardless of outcome and writing begins. If no capable learned
+> policy exists by then, [`scripts/bc_init.py`](scripts/bc_init.py) is used to
+> manufacture one for RQ1's learned-loop arm. ⚠️ A teacher-initialised policy
+> remains a **probe, not an arm** — it is not a like-for-like comparison for the
+> architecture ladder or for Gate B, and any result using it must say so.
+
+⛔ **The retitling does not soften the re-opening.** ⚠️ **This section said
+"closed. Do not re-open." until 2026-09-04.** It was re-opened on a named
+confound in the optimiser, and ⭐ **on 2026-09-06 that confound was measured and
+refuted** — see below. Four of the five lines were untouched throughout; the
+fifth is now restored.
 
 🔍 **The re-opening was still worth it.** It converted *"nobody checked"* into
 *"checked, and it is not the explanation"*, which is what §3 needed to be able to
@@ -249,8 +348,8 @@ against a 15.0 pp gap ([`b0_ablation.md`](results/b0_ablation.md)), so acquiring
 every B0 component would still not close it — which is why Gates D–F attack the
 optimiser and the advantage rather than trying to clone the heuristic.
 
-🔒 **The bar, in this project's own standard** (Gate A and RQ2 both judge on
-disjoint seed ranges): *clears B0* is a median above **57.3 %**; *beats B0* is a
+🔒 **The bar, in this project's own standard** (Gate A and the J-ladder both
+judge on disjoint seed ranges): *clears B0* is a median above **57.3 %**; *beats B0* is a
 **worst seed above 60.6 %**. Full declaration:
 [`results/capability_gates.md`](results/capability_gates.md).
 
@@ -263,7 +362,7 @@ disjoint seed ranges): *clears B0* is a median above **57.3 %**; *beats B0* is a
 | **J2** | directional, **fixed** on the MCV | separates *directionality* from *adaptivity* | ✅ |
 | **J3** | directional, greedy retarget | adaptive without learning | ✅ |
 | **J3B** | directional, **exhaustive best response** | one-step-optimal | ✅ |
-| **J4** | directional, **learned**, opponent pool | RQ3's stretch | ⛔ **not built** |
+| **J4** | directional, **learned**, opponent pool | RQ2's stretch | ⛔ **not built** |
 
 🔒 The beam is 3GPP TR 38.901's element pattern, `A(θ) = −min[12(θ/θ_3dB)², 30]`
 with **θ_3dB = 25° the FULL half-power beamwidth** — the −3 dB point is at 12.5°.
@@ -278,16 +377,16 @@ tolerated: aiming at *this* step's chain would be circular.
 🔒 Every gate is judged on the **worst seed**, at >= 5 seeds, with the rule
 declared before the run and never edited afterwards.
 
-| gate | question | verdict |
-|---|---|---|
-| **A** | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
-| **B** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
-| **C** | does quantisation hurt coordination more than control? | ⛔ **not run** (RQ4) |
-| **D** | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **NULL / REGRESSION, 2026-09-06** — λ is null-to-harmful and 10x the budget costs **32 pp**. [`capability_gates.md`](results/capability_gates.md) |
-| **E** | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **NULL, 2026-09-06** — 7 weights over a 12x range, whole axis inside single-cell noise; `role_entropy` and `observer_range_m` get **worse**. ⭐ And the signal *reached the gradient*: 35.5 % differentiable share against a 0.04–0.16 % control class |
-| **F** | is the **observation** lying to the policy? | ⛔ **not run** — same file, lowest prior |
-| Φ v2 | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. §3 |
-| k = 2 | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
+| gate | serves | question | verdict |
+|---|---|---|---|
+| **A** | control (closed) | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
+| **B** | **RQ1** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
+| **C** | **RQ3** | does quantisation hurt coordination more than control? | ⛔ **not run** |
+| **D** | the instrument | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **NULL / REGRESSION, 2026-09-06** — λ is null-to-harmful and 10x the budget costs **32 pp**. [`capability_gates.md`](results/capability_gates.md) |
+| **E** | the instrument | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **NULL, 2026-09-06** — 7 weights over a 12x range, whole axis inside single-cell noise; `role_entropy` and `observer_range_m` get **worse**. ⭐ And the signal *reached the gradient*: 35.5 % differentiable share against a 0.04–0.16 % control class |
+| **F** | the instrument | is the **observation** lying to the policy? | ⛔ **not run** — same file, lowest prior |
+| Φ v2 | the instrument | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. §3 |
+| k = 2 | the instrument | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
 
 ⚠️ **Gates D, E and F re-open §3.** Every branch of each is declared before its
 run and each partitions the outcome space — ⛔ Gate A and
@@ -322,6 +421,11 @@ designed to test it, and the sequence is why the current claim should be trusted
 | *Learned control beats the scripted baseline* | 8 nulls, then §3's five lines | 2026-09-02 — ⚠️ **partially reinstated 2026-09-04.** The eight nulls are *confounded*, not refuted: all were measured at ~5,900 Adam steps. §3 |
 | *The adversary ladder is non-monotone; adaptivity does not help* | the 5-seed CUDA re-run **reversed** a one-seed CPU result | 2026-09-03 |
 | *Exploitability is a cost of **capability*** | the frontier run: `b0-geodesic` is **more capable than every learned policy and less exploitable than all of them** | 2026-09-04 |
+| *Four objectives, with the capability programme as an RQ* | superseded by three RQs; the capability programme is an instrument, not an objective | reframed 2026-09-06 |
+
+⚠️ **The last row is a *reframing*, not a refutation.** No measurement killed it —
+the organisation of the same evidence changed, and it is recorded here rather than
+applied silently. §2 carries the old → new mapping.
 
 🔒 **The third was refuted *before it was declared*,** because it was fitted over
 eight policies rather than written down after four. ⛔ Hold the current claim to
@@ -334,54 +438,41 @@ the same standard: §7 runs 1 and 2 exist to break it.
 🔒 **Ordered by what the thesis is for.** ⚠️ An earlier version of this section
 ordered by evidence-per-hour and put the scripted controls first — which leads
 somewhere this project does not want to go, because if a B0 variant is the
-frontier-breaking policy then the deliverable is *an improved heuristic*. Runs 2–4
-are controls and need no training; **run 1 is the policy** and it is first.
+frontier-breaking policy then the deliverable is *an improved heuristic*.
 
-### ~~Run 1~~ — ⚠️ **DONE 2026-09-04. NULL.** [`obs_mask_gate.md`](results/obs_mask_gate.md)
+⭐ **Reordered 2026-09-06** by the restructure recorded in §6. Runs 1–3 are closed
+and kept below as the record. What remains is ordered so that the deliverable
+which **cannot fail** is first, the instrument is **time-boxed**, and RQ1's
+replication lands before anything is written up.
 
-📏 `obs["flat"]` carries **nine** features the emitter can move: `noise_dbm`,
-`e2e_capacity`, and each neighbour's edge capacity. Everything else is geometry,
-kinematics or the sensor — and 🔒 `clr_hvt`, `clr_mcv` and the per-edge *clearance*
-come from building occlusion, which the jammer **cannot touch**.
+| | what | serves | cost |
+|---|---|---|---|
+| **1** | **ONNX export, locally** — this week | RQ3 | days, no training |
+| **2** | **the redundancy metric** | RQ2 | half a day, no training |
+| **3** | **Gates D–F** — 🔒 three-week box, §3 | the instrument | ~4 GPU-hours, inside the box |
+| **4** | **the second-environment replication** | RQ1 | scripted controllers, no training |
+| **5** | **the exposé** | all three | — |
+| **6** | **J4, the Orin work, longer runs** | RQ1 / RQ2 / RQ3 | after the above |
 
-`--mask-jammed-obs` zeroes exactly those nine. **The result is a policy that can
-still adapt — on geometry — but has no loop on the quantity it is attacked
-through.** That is the learned counterpart of `repair_score="clearance"`, and it
-is the policy this project is actually trying to build: adaptive, capable, and
-not exploitable.
+### 1. ONNX export — locally first, then the Orin. RQ3.
 
-| | prediction |
-|---|---|
-| **the claim holds constructively** | capability within ~2 pp of the unmasked control, exploitability falling toward `b0-geodesic`'s 6.39 pp. ⭐ **That is the result the thesis wants** — a learned policy off the tradeoff |
-| **the claim holds, expensively** | capability drops with exploitability. The loop was load-bearing for capability too, and the trade is real rather than avoidable |
-| **null** | neither moves. 📏 Plausible: the learned policies already sit at their **sensor** ceiling (`no-div \| observed` = 0.887), so their loop on capacity may be doing very little to begin with |
+**The only deliverable that cannot fail.** PyTorch Geometric may not export; that
+risk is **unretired and cheap to close**, and it closes on a laptop before
+anything is flashed to a Jetson. ⚠️ A GNN that cannot deploy is a **reported
+result** — its measured advantage over DeepSets is a null anyway. Gate C (§5) is
+declared, verbatim, and waits on this.
 
-🔒 Declare the rule in `results/obs_mask_gate.md` **before** running. Control is
-the same architecture, cadence and seeds with the flag off.
-
-### ~~Run 2~~ — ⛔ **DONE 2026-09-04. The target does not matter.** [`repair_gates.md`](results/repair_gates.md)
-
-`B0Config.repair_score` already takes **`"clearance"`** — the same idea on the
-scripted side, and a one-word config change. ⚠️ **It is a control, not the
-deliverable**: if it works, the frontier-breaking policy would be a B0 variant,
-and improving the heuristic is not what this thesis is for. Run it because it
-prices the mechanism cheaply and because it makes run 1 interpretable either way.
-
-### ~~Run 3~~ — ✅ **DONE 2026-09-04. Dose–response confirmed, and the shipped amplitude is 2x too large.** [`repair_gates.md`](results/repair_gates.md)
-
-`repair_amplitude_m`: **0** → 50 → 100 → **200**. If capability and exploitability
-both rise monotonically with the loop's amplitude, RQ1 stops being one controlled
-pair and becomes a **curve**.
-
-### Run 4 — the redundancy metric. Half a day, then zero training.
+### 2. Run 4 — the redundancy metric. RQ2. Half a day, then zero training.
 
 *"Does a second threshold-clearing path exist that is edge-disjoint from the
 chosen one?"* — computable from the capacity matrix `routing.py` already builds.
-⛔ Nothing measures this today, and it is RQ3's candidate mechanism.
+⛔ Nothing measures this today, and it is **RQ2's candidate mechanism**.
 
----
+### 3. ⭐ Runs 5–7 — the capability programme. Gates D, E, F. The instrument.
 
-### ⭐ Runs 5–7 — the capability programme. Gates D, E, F, ~4 GPU-hours.
+🔒 **Time-boxed at three weeks (§3).** ~4 GPU-hours of compute; the box is on the
+search, not the hardware. 📏 **D and E are closed and both NULL** (§5); **F is
+what the box has left**, and it carries the lowest prior of the three.
 
 🔒 **Declared in full, before any run:**
 [`results/capability_gates.md`](results/capability_gates.md). Ordered so that each
@@ -441,15 +532,71 @@ quietly re-litigated:
 * ⛔ **DAgger from B0.** [`bc_init.py`](scripts/bc_init.py) exists and has never
   been reported, and `memory_horizon.md` predicts it fixes the 9.4 % clone. Held
   as the fallback if D, E and F all fail. ⚠️ A teacher-initialised policy is a
-  **probe**, not a like-for-like RQ2 or Gate B arm.
+  **probe**, not a like-for-like **architecture-ladder** or Gate B arm.
 
-### Then, in order
+### 4. The second environment — RQ1's replication. No training.
+
+📏 RQ1's dose–response is measured on **one map**, and §8 lists `n = 1
+environment` as a risk. The resolution is a **minimal abstract relay
+environment**: stations, a threshold, a directed emitter, and the same scripted
+controllers varied over `repair_amplitude_m`.
+
+🔒 **It needs no learned policy**, which is why it can sit after the instrument's
+box without depending on the box's outcome. If the dose–response reproduces there,
+the claim is no longer tied to Frankfurt geometry and `n = 1 environment` becomes
+an **external-validity argument** rather than a limitation. ⚠️ If it does not
+reproduce, that is a result about RQ1 and it is reported as one.
+
+### 5. The exposé, then the paper
+
+🔒 **After items 1–4.** The claim has moved three times in ten days and §3
+re-opened on 2026-09-04; let the data settle it before it is promised to anyone.
+
+### 6. Then: J4, the Orin work, longer runs
 
 | | what | why then |
 |---|---|---|
-| **RQ4 / Gate C** | ONNX export **locally first**, then TensorRT on the Orin | The only deliverable that cannot fail. PyTorch Geometric may not export; that risk is unretired and cheap to close |
-| **J4** | learned jammer, opponent pool | Strengthens RQ1 and RQ3. ⚠️ Gate B stands without it — the fallback declared in §8 |
-| **Write** | exposé, then the paper | 🔒 **After runs 1–3 and Gates D–F.** The claim has moved three times in ten days and §3 re-opened on 2026-09-04; let the data settle it before it is promised to anyone |
+| **J4** | learned jammer, opponent pool | Strengthens RQ1 and RQ2. ⚠️ Gate B stands without it — the fallback declared in §8 |
+| **RQ3 / Gate C on hardware** | TensorRT on the Orin, after item 1's local export | The export risk is retired first; the Jetson only ever runs a graph that is known to export |
+| **longer runs** | more env-steps per cell | ⚠️ Only if Gate D's regression is understood. 📏 10x the gradient budget already cost **32 pp** |
+
+### Closed — runs 1–3, kept as the record
+
+### ~~Run 1~~ — ⚠️ **DONE 2026-09-04. NULL.** [`obs_mask_gate.md`](results/obs_mask_gate.md)
+
+📏 `obs["flat"]` carries **nine** features the emitter can move: `noise_dbm`,
+`e2e_capacity`, and each neighbour's edge capacity. Everything else is geometry,
+kinematics or the sensor — and 🔒 `clr_hvt`, `clr_mcv` and the per-edge *clearance*
+come from building occlusion, which the jammer **cannot touch**.
+
+`--mask-jammed-obs` zeroes exactly those nine. **The result is a policy that can
+still adapt — on geometry — but has no loop on the quantity it is attacked
+through.** That is the learned counterpart of `repair_score="clearance"`, and it
+is the policy this project is actually trying to build: adaptive, capable, and
+not exploitable.
+
+| | prediction |
+|---|---|
+| **the claim holds constructively** | capability within ~2 pp of the unmasked control, exploitability falling toward `b0-geodesic`'s 6.39 pp. ⭐ **That is the result the thesis wants** — a learned policy off the tradeoff |
+| **the claim holds, expensively** | capability drops with exploitability. The loop was load-bearing for capability too, and the trade is real rather than avoidable |
+| **null** | neither moves. 📏 Plausible: the learned policies already sit at their **sensor** ceiling (`no-div \| observed` = 0.887), so their loop on capacity may be doing very little to begin with |
+
+🔒 Declare the rule in `results/obs_mask_gate.md` **before** running. Control is
+the same architecture, cadence and seeds with the flag off.
+
+### ~~Run 2~~ — ⛔ **DONE 2026-09-04. The target does not matter.** [`repair_gates.md`](results/repair_gates.md)
+
+`B0Config.repair_score` already takes **`"clearance"`** — the same idea on the
+scripted side, and a one-word config change. ⚠️ **It is a control, not the
+deliverable**: if it works, the frontier-breaking policy would be a B0 variant,
+and improving the heuristic is not what this thesis is for. Run it because it
+prices the mechanism cheaply and because it makes run 1 interpretable either way.
+
+### ~~Run 3~~ — ✅ **DONE 2026-09-04. Dose–response confirmed, and the shipped amplitude is 2x too large.** [`repair_gates.md`](results/repair_gates.md)
+
+`repair_amplitude_m`: **0** → 50 → 100 → **200**. If capability and exploitability
+both rise monotonically with the loop's amplitude, RQ1 stops being one controlled
+pair and becomes a **curve**.
 
 ⛔ **Not on the roadmap**, and each for a reason that survives §3's re-opening:
 
@@ -459,7 +606,7 @@ quietly re-litigated:
 | **further action-space work** | Gate A. ⚠️ It is *also* confounded by the optimisation budget — its velocity seeds "learn normally for the first fifth of the run, then decay" over 46 updates — but 📏 `capable \| observed` is already **0.620 vs B0's 0.617**, so control is not the deficit. ⛔ Re-open only if Gate D promotes and the pathologies persist |
 | **recurrence** | Bounded at 0.4 pp for *target* memory by the oracle. ⚠️ Role-commitment memory is left open by `memory_horizon.md` — but that is what Gate E attacks, far more cheaply and at a fraction of the bug density |
 | **frame stacking beyond k = 2** | A one-step search state needs no longer history |
-| **wider or deeper networks** | 📏 RQ2 measured architecture at ±1 pp across three rungs. The actor is 137 k parameters against ~5,900 gradient steps: the budget binds long before the width does |
+| **wider or deeper networks** | 📏 The architecture ladder measured architecture at ±1 pp across three rungs. The actor is 137 k parameters against ~5,900 gradient steps: the budget binds long before the width does |
 
 📏 **And one axis is now measured to be nearly free.** `total_power_w` depends on
 **speed, not altitude** — climbing costs a transient `W·v_z/η` and staying high is
@@ -479,13 +626,13 @@ be ~0.
 
 | risk | mitigation |
 |---|---|
-| **Run 1 shows the loop's target does not matter** | §1's mechanism is then wrong and RQ1 reverts to a bare correlation. ✅ RQ2 and Gate B's number are unaffected — this is why they are separate objectives |
-| **J4 cycles.** Alternating best response's normal failure | 🔒 RQ1, RQ2 and RQ4 stand without it; the strongest adversary reached is then scripted and the paper says so |
+| **Run 1 shows the loop's target does not matter** | §1's mechanism is then wrong and RQ1 reverts to a bare correlation. ✅ The J-ladder decomposition and Gate B's number are unaffected — ⭐ and that is still true now the ladder sits *inside* RQ1, because it measures the **adversary**, not the controller |
+| **J4 cycles.** Alternating best response's normal failure | 🔒 RQ1 and RQ3 stand without it, and RQ2's off-diagonal result stands as measured against **scripted** rungs; the strongest adversary reached is then scripted and the paper says so |
 | **PyTorch Geometric will not export** | ⚠️ Attempt it *locally*, before touching the Jetson. A GNN that cannot deploy is a **reported result** — its measured advantage over DeepSets is a null anyway |
 | **TR 36.777 NLoS intercept is wrong.** Every number re-derives | 🔒 One human reading of one table. Close it before the freeze |
-| **n = 1 environment** | ⚠️ Not resolvable within this project. State it as the limitation it is; the mechanism is at least *named and priced* rather than statistical |
+| **n = 1 environment** | ✅ **Resolvable, and cheaply — §7 item 4.** A **minimal abstract relay environment** that reproduces the `repair_amplitude_m` dose–response is the resolution. 🔒 It needs **no learned policy**: the arms are scripted controllers, so it does not queue behind the instrument. That converts the objection from a limitation into an **external-validity argument**, and the mechanism is *named and priced* rather than statistical either way |
 | **The claim moves a fourth time** | 🔒 Runs 1–2 are pre-declared attempts to break the current one. If it survives them it has been tested, not just fitted |
-| ⭐ **Gates D–F succeed and a learned policy beats B0** | ✅ **This strengthens the thesis rather than threatening it.** §1 already dropped the scripted-vs-learned framing, and it *requires* a capable learned policy to test the loop claim at all. B0 remains the protagonist of RQ1's controlled pair, which is scripted on both sides |
+| ⭐ **Gates D–F succeed and a learned policy beats B0** | ✅ **This strengthens the thesis rather than threatening it.** §1 already dropped the scripted-vs-learned framing, and it *requires* a capable learned policy to test the loop claim at all. B0 remains the protagonist of RQ1's controlled pair, which is scripted on both sides. 🔒 §3 is an instrument, so this outcome changes what RQ1 can be tested *on*, not what RQ1 claims |
 | ☠️ **Gates D–F succeed and every prior null has to be re-read** | ⚠️ The honest cost of §3's re-opening. 📏 Eight nulls, Gate A, Φ v2 and the k = 2 gate were all measured at ~5,900 Adam steps. If Gate D promotes, each needs a one-line re-statement — *"measured under a 10x smaller optimisation budget"* — and the cheap ones (Φ v2, k = 2) should be re-run before the freeze |
 | ⚠️ **Gate D promotes and destabilises** | Its PARTIAL branch exists for exactly this: helps on the median, hurts the worst seed. 🔒 `AGENTS.md` judges on the worst seed and that is not relaxed for this programme |
 | ⚠️ **`D_i`'s signal is circular** | 📏 The differentiable share it produces is policy-dependent — **35.6 %** on B0 (tenure 295) against **7.98 %** on the learned policy (tenure 47) — so the credit grows as roles emerge. Gate E's validity precondition measures the share **on the trained policy**, and its NULL branch is written to be informative if the bootstrap never starts |
@@ -497,8 +644,12 @@ be ~0.
 📏 Each measured, not assumed — `docs/inherited/DECISIONS.md`.
 
 - **A bigger map, a second city, a better channel.** Compute is not the
-  constraint; a 10 M-step run costs 2.2 minutes. ⚠️ Held-out map *tiles* inside
-  the existing box remain free and would answer the in-distribution objection.
+  constraint; a 10 M-step run costs 2.2 minutes. ⭐ **But the external-validity
+  objection is now answered a different way**: §7 item 4's **abstract twin** — a
+  minimal relay environment reproducing the dose–response on scripted controllers
+  — replaces "a second city" as RQ1's replication, at a fraction of the cost and
+  with no training. See §8. ⚠️ Held-out map *tiles* inside the existing box remain
+  free and would answer the in-distribution objection.
 - **Flying below 40 m.** TR 36.777 stops at 22.5 m.
 - **Transmit power or beamwidth as actions.** Three framings, three nulls, and a
   degenerate optimum for the jammer.
@@ -507,7 +658,8 @@ be ~0.
 - **An agent index, a role embedding, or DAgger from B0.** ⛔ Excluded by
   decision 2026-09-04 — §7. Roles must **emerge**, and a teacher-initialised
   policy is a probe rather than an arm. DAgger is held as the fallback if
-  Gates D–F all fail.
+  Gates D–F all fail, or if §3's **three-week box** expires without a capable
+  learned policy.
 - 🔧 **A per-drone value head or a COMA-style counterfactual baseline.** The
   natural successor to Gate E, and deliberately **not** bundled into it. `A_i =
   G_i − V(s)` and `G_i` is ~99.9 % identical across drones *today*, so an
