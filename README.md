@@ -1,7 +1,18 @@
 # Contested Relay
 
+> **The cost of adaptation: measuring and removing exploitability in multi-agent
+> relay under directed jamming.**
+
 Adversarially robust multi-agent UAV relay under contested spectrum, from GPU
-simulation to embedded deployment.
+simulation to embedded deployment. **Goal** — show that a controller's own
+repositioning loop is what makes it exploitable, measure how that cost scales,
+and demonstrate that adversarial co-training removes it.
+
+⭐ **Restructured 2026-09-06 around three research questions.** The paragraph
+below is kept as written; it states the premise, not the objectives. For the
+questions themselves — and the old-four → new-three mapping — read
+[`PLAN.md`](PLAN.md) §2. Terms are defined once in
+[`docs/GLOSSARY.md`](docs/GLOSSARY.md).
 
 A swarm of `N` UAVs must observe a moving ground target in Frankfurt, relay the
 sensor feed to a command vehicle over a multi-hop chain at >= 15 Mbps, and
@@ -12,6 +23,11 @@ Buildings block line of sight, so the relay chain is geometrically necessary.
 static task.** It does not, and a heuristic should win a static, fully-specified
 problem. The question is how far each policy degrades when the adversary
 *adapts* to it. See [`PLAN.md`](PLAN.md).
+
+⛔ **That premise is settled, not open.** The capability programme that would
+overturn it is an **instrument** (`PLAN.md` §3), time-boxed at three weeks, and
+the thesis does not depend on its outcome: the evidence for the headline claim is
+a *scripted* controlled pair.
 
 ## Provenance
 
