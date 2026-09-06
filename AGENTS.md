@@ -233,6 +233,15 @@ rescaled gradient is very nearly the same update. ⚠️ `approx_kl` remains the
 binding diagnostic, and on the shipped mission configuration it is an order of
 magnitude below every value in that table.
 
+⭐ **gSDE is implemented and tested, and ships OFF** (`--sde`). 📏 On
+`MountainCarContinuous-v0` it takes the trainer from **2/5 seeds solved at −47.9**
+to **5/5 at +67.9**, and 🔒 the magnitude confound was tested rather than argued:
+white noise re-run across the *same* effective `sigma` band (0.42 → 0.77) gets
+monotonically **worse** (−67 / −80 / −92), buying action saturation and no
+displacement. ⛔ **This says nothing about the relay** — different task, different
+failure mode, and the base rate here is eight nulls plus Gates A, D and E. It is
+an arm for a CUDA gate, not a default. `results/trainer_benchmark.md`.
+
 ⚠️ Three things in it are 🔒 and each failed **silently** before: the GAE mask is
 `terminated | truncated`, the truncation bootstrap reads `extras["final_state"]`
 (not what `step()` returns), and the swarm is **one** parameter-shared agent over
@@ -356,7 +365,7 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
 ```bash
 uv sync --extra dev                # `dev` is an EXTRA -- plain `uv sync` gives
                                    # you neither pytest nor ruff
-uv run pytest                      # 465 passed, 4 skipped on arm64 (+ CUDA-gated)
+uv run pytest                      # 473 passed, 4 skipped on arm64 (+ CUDA-gated)
 uv run ruff check . && uv run ruff format .
 ```
 

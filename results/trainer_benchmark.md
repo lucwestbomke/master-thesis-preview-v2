@@ -448,3 +448,115 @@ says so.
 | ✅ **CORRELATION** | every gSDE-off cell's median stays below **+10** | white noise fails across the whole band the gSDE arm explored at, so the win is not magnitude |
 | ⛔ **MAGNITUDE** | any gSDE-off cell's median reaches **+48.6** (the gSDE arm's *worst* seed) | ☠️ the 2 × 2's win is a scale effect and gSDE's correlation is not doing the work. The MECHANISM CONFIRMED verdict above would then be **correct on its rule and wrong in its reading**, and it would be recorded that way |
 | ⚠️ **PARTIAL** | any cell's median in [+10, +48.6) | white noise at the right scale gets part of the way. Report both and attribute nothing |
+
+---
+
+# Result — ✅ **MECHANISM CONFIRMED, and the reading survives the control. 2026-09-06.**
+
+📏 5 seeds per cell, CPU, 20 k steps, 3,130 Adam steps, deterministic mean-action
+evaluation over 100 episodes. Rows in [`trainer_benchmark.jsonl`](trainer_benchmark.jsonl).
+⚠️ The 2 × 2 was run twice — once before `sigma_x` was recorded and once after —
+and reproduced **bit for bit**, which is the determinism check and not a second
+attempt.
+
+## The declared 2 × 2
+
+| `initial_log_std` | gSDE | median | worst | per seed | effective `sigma_x` |
+|---|---|---|---|---|---|
+| **−3.29** | off | −0.052 | −0.551 | −0.55 · −0.09 · −0.05 · −0.03 · 43.32 | 0.033 – 0.037 |
+| **−3.29** | on | −0.116 | −0.159 | −0.16 · −0.12 · −0.12 · −0.12 · −0.08 | 0.019 – 0.041 |
+| **−1.0** | off | −47.95 | −55.29 | −55.3 · −51.9 · −48.0 · 67.4 · 81.7 | 0.342 – 0.350 |
+| **−1.0** | **on** | **+67.88** | **+48.63** | 48.6 · 59.0 · 67.9 · 76.8 · **85.3** | 0.432 – 0.788 |
+
+✅ **Δ = +115.83 median and +103.92 on the worst seed, at `initial_log_std = −1.0`.**
+The rule reads *"Δ ≥ +50 at either level, worst-seed Δ ≥ 0"* → **MECHANISM
+CONFIRMED**.
+
+⛔ **NULL at −3.29**, Δ = −0.06. Both arms explore at `sigma ≈ 0.03` and neither
+ever reaches the goal, so the level is uninformative rather than contradictory.
+⚠️ The one seed that scores 43.32 in the `(−3.29, off)` cell is the reason this
+project judges on the worst seed: its median is −0.052 and four of its five seeds
+are flat.
+
+⭐ **The most useful column is `per seed`, not `median`.** gSDE-on solves on
+**5 / 5**. gSDE-off at the same nominal scale solves on **2 / 5** and the other
+three land at −48 to −55, which on this task is the signature of thrashing the
+throttle for 999 steps and never reaching the flag. gSDE does not just raise the
+mean; it removes the failure mode.
+
+## 🔒 The scale-matched control — the amendment's question, answered
+
+**gSDE off, at three scales chosen to span the gSDE arm's measured band:**
+
+| `initial_log_std` | effective `sigma_x` | median | worst | per seed |
+|---|---|---|---|---|
+| −0.8 | 0.415 – 0.426 | **−67.17** | −99.72 | −99.7 · −97.5 · −67.2 · −36.3 · 11.8 |
+| −0.5 | 0.568 – 0.589 | **−80.14** | −99.90 | −99.9 · −99.9 · −80.1 · −36.1 · 95.7 |
+| −0.25 | 0.734 – 0.767 | **−91.70** | −99.90 | −99.9 · −93.8 · −91.7 · −80.3 · −27.0 |
+| *(for comparison)* gSDE on, −1.0 | 0.432 – 0.788 | **+67.88** | **+48.63** | all five ≥ 48.6 |
+
+✅ **CORRELATION.** Every gSDE-off cell's median is below +10 — far below — across
+`sigma` 0.415 → 0.767, which covers the gSDE arm's 0.432 → 0.788 essentially
+exactly. **White noise at the same effective magnitude does not just fail to
+match gSDE; it gets monotonically worse as the magnitude rises.**
+
+🔍 **And the mechanism is legible in the sign.** `MountainCarContinuous-v0` pays
+`−0.1 * u^2` every step and `+100` once, on reaching the flag. A median of −91.7
+is a policy that spent the entire episode applying large throttle and never
+arrived. Independent per-step noise **averages out against the car's inertia**:
+raising its variance buys more control cost and no more displacement. Correlated
+noise holds one direction for `sde_sample_freq` steps at a time, which is what
+builds the momentum this task requires. That is precisely the argument gSDE is
+made from, and it is visible here rather than asserted.
+
+⚠️ **Against the published number, this is a PARTIAL and not a reproduction.**
+📏 `rl-baselines3-zoo` reports **88.343 ± 2.572**; the best cell here is a median
+of **67.88** with a best seed of **85.30**. ⛔ The gate was never about matching
+that number — it is about the matched-pair Δ — but the gap is real and unexplained,
+and the declared departures (8 envs × 8 rollouts against 1 × 8; whole-batch rather
+than per-minibatch advantage normalisation) are the candidates.
+
+## 🔒 Diagnostics
+
+| cell | `sigma_x` | `approx_kl` | `clip_fraction` | `grad_kept` | `explained_variance` | `sat_any` |
+|---|---|---|---|---|---|---|
+| −3.29 off | 0.033–0.037 | 0.0037–0.0087 | 0.197–0.289 | 0.51–0.77 | 0.247–0.998 | — |
+| −3.29 on | 0.019–0.041 | 0.0197–0.0466 | 0.322–0.366 | 0.51–0.71 | 0.981–0.997 | — |
+| −1.0 off | 0.342–0.350 | 0.0003–0.0027 | 0.009–0.137 | **1.00** | 0.774–0.931 | — |
+| **−1.0 on** | 0.432–0.788 | 0.0008–0.0182 | 0.029–0.179 | 0.79–1.00 | 0.559–0.908 | 0.448–0.792 |
+| −0.8 off | 0.415–0.426 | 0.0004–0.0014 | — | — | 0.746–0.908 | 0.792–1.000 |
+| −0.5 off | 0.568–0.589 | 0.0001–0.0015 | — | — | 0.459–0.967 | 0.172–0.990 |
+| −0.25 off | 0.734–0.767 | 0.0002–0.0012 | — | — | 0.713–0.963 | 0.292–1.000 |
+
+⭐ **`grad_kept` again fails to be a health check.** The `(−1.0, off)` cell holds
+**1.00** — a completely unclipped gradient — and scores −47.9. The winning cell
+holds 0.79–1.00. This is the third independent task on which the metric does not
+separate a working run from a broken one.
+
+⚠️ **`sat_any` is the honest cost column.** The failing white-noise cells sit at
+**0.79 – 1.00** action saturation: the policy is pinned at the throttle limit
+almost every step. The gSDE cell sits at **0.45 – 0.79**. More noise did not buy
+more exploration, it bought more clipping.
+
+## ⛔ What this licenses, and what it does not
+
+✅ **Licensed.** The gSDE implementation in `SwarmActor._init_sde` is correct and
+does what gSDE is for: at matched effective exploration it converts a task from
+2/5 solved to 5/5, and the alternative explanation was tested and refuted rather
+than argued away. The unit tests in `src/models/test_actor.py` pin the pieces —
+the closed-form `sigma_hat`, the temporal correlation, the agreement between the
+sampler and the density, and that `evaluate` needs no memory of the matrix.
+
+⛔ **Not licensed.** Nothing here says gSDE helps the **relay**. The mission is a
+different task with a different failure mode, and 📏 this project's base rate for
+a new knob is eight pre-declared nulls plus Gate A, Gate D and Gate E. The
+relevant question — does correlated exploration move `observer_tenure`,
+`role_entropy` or `mission_capable` — needs a Gate, on CUDA, at 5 seeds, scored
+through `evaluate.py` against B0.
+
+🔍 **The one reason to think it might, stated as a hypothesis and not a result:**
+📏 `AGENTS.md` records the learned policies pinned at the 25 m/s dash cap on 57 %
+of steps and against the map boundary on 15–23 %, where B0 scores 3.1 % and 0.9 %.
+That is the same signature as the failing cells here — saturation without
+displacement — and Gate A's kill branch named exploration as its next suspect.
+⚠️ It is a resemblance, not evidence. ⛔ `--sde` ships **off**.

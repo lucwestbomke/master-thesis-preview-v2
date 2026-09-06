@@ -153,6 +153,60 @@ simulators and not RL frameworks, and RQ3 cannot proceed without them.
 
 ---
 
+### 2026-09-06 (later) — gSDE implemented and tested
+
+⭐ **Asked directly: does gSDE bring a real advantage?** Answer, in two halves.
+
+📏 **On a task where exploration is the bottleneck, yes, and the mechanism is
+correlation rather than magnitude.** Full declaration, amendment and numbers in
+[`trainer_benchmark.md`](trainer_benchmark.md). `MountainCarContinuous-v0`, 5
+seeds: gSDE **+67.9 median, 5/5 seeds solved**, against **−47.9 and 2/5** for the
+shipped Gaussian at the same nominal scale — Δ **+115.8**, worst-seed Δ **+103.9**.
+
+🔒 **And the obvious confound was tested rather than argued away.** gSDE changes
+noise correlation *and* effective magnitude at once (`sigma_hat = ||phi(s)||
+* sigma`), and 📏 `sigma_x` showed the winning arm exploring at 0.43–0.79 against
+the control's 0.34–0.35. So the white-noise arm was re-run at **0.415 / 0.589 /
+0.767**, spanning that band: medians **−67 / −80 / −92**, monotonically *worse*.
+🔍 More white noise buys action saturation (`sat_any` 0.79–1.00) and no
+displacement, because independent per-step noise averages out against the car's
+inertia. Correlation is doing the work.
+
+⛔ **On the relay, unknown, and I would still guess null.** Nothing here is
+evidence about the mission — different task, different failure mode, and this
+project's base rate for a new knob is eight pre-declared nulls plus Gates A, D and
+E. `--sde` ships **off** and is an arm for a CUDA gate, not a default.
+
+🔍 The one reason it is worth an arm at all, as a hypothesis: 📏 the learned
+policies sit pinned at the speed cap on 57 % of steps and at the boundary on
+15–23 % against B0's 3.1 % and 0.9 %, which is the same *saturation without
+displacement* signature the failing cells show here — and Gate A's kill branch
+named exploration as its next suspect.
+
+#### ☠️ One thing I got wrong and fixed before declaring
+
+The first `_init_sde` rescaled `initial_log_std` by `0.5*log(latent_dim)` so the
+flag would keep naming the effective deviation. 📏 It assumed `||phi||^2 ~
+latent_dim`; measured `||phi|| = 2.10` on a 64-wide trunk against an assumed
+**8.0** — wrong by 4×, and not a constant, since it moves with the task and with
+training. ⛔ No rescaling can make that flag mean the effective deviation, so the
+correction was removed and `sigma_x` now reads the truth off a real forward pass.
+⚠️ A second miss, corrected at the same time: Phase 0's `mountaincar` arm ran with
+orthogonal init while the tuned entry it reproduces sets `ortho_init: False`.
+
+#### 🔒 Provenance — gSDE ships OFF and provably adds nothing when off
+
+`src/models/test_actor.py` pins it: identical parameters, identical
+`state_dict()` keys (⛔ **no `sde_log_std`**), identical `forward` outputs, and an
+identical sampled action from the same seed. `reset_noise` consumes no RNG when
+off. Six further tests pin the closed-form `sigma_hat`, the temporal correlation,
+the sampler/density agreement, the `min_log_std` floor on the *effective*
+deviation, and the checkpoint round-trip. Every loader in `scripts/` and
+`src/viz/` now reads `sde` off the blob and defaults it to `False`, for the same
+reason `tanh_mean` is there.
+
+---
+
 ### ⛔ What is blocked, and why
 
 **Phase 2 and Phase 3 cannot run on this machine.** Not a judgement call:
