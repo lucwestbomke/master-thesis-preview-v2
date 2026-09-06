@@ -45,6 +45,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.env.core import STAGES, BatchedSwarmEnv, EnvConfig
+from src.env.core import resolve_device as core_resolve_device
 from src.env.reward import PHI_V2, RewardWeights, pbrs_safe_fields, weight_constraints_satisfied
 from src.models import ARCHITECTURES, SwarmActor, SwarmCritic, parameter_count
 from src.training.curriculum import CurriculumSchedule
@@ -422,12 +423,14 @@ def _schedule(a: argparse.Namespace) -> CurriculumSchedule:
 
 
 def resolve_device(name: str) -> torch.device:
-    """⛔ Never silently degrade a real run to CPU (`AGENTS.md`)."""
-    if name.startswith("cuda") and not torch.cuda.is_available():
-        raise SystemExit("--device cuda requested and CUDA is not available; refusing to run")
-    if name == "mps" and not torch.backends.mps.is_available():
-        raise SystemExit("--device mps requested and MPS is not available; refusing to run")
-    return torch.device(name)
+    """⛔ Never silently degrade a real run to CPU (`AGENTS.md`).
+
+    🔒 One definition, in `src/env/core.py`, so the eleven scripts that take
+    `--device` cannot disagree about it. This wrapper is kept because `train.py`
+    checks the device **before** building anything, and `EnvConfig` only checks
+    when the env is constructed.
+    """
+    return core_resolve_device(name)
 
 
 def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:

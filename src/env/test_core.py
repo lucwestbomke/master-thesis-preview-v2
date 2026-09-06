@@ -684,3 +684,44 @@ def test_set_stage_weights_moves_which_stage_fresh_episodes_draw():
         env.set_stage_weights((1.0, 0.0))
     with pytest.raises(ValueError):
         env.set_stage_weights((0.0, 0.0, 0.0, 0.0))
+
+
+def test_a_device_that_is_not_there_is_refused_at_config_construction():
+    """⛔ `AGENTS.md`: "Guard device selection; never silently degrade a real run
+    to CPU."
+
+    ☠️ That rule lived in ONE place -- `scripts/train.py` -- while eleven scripts
+    accept `--device`, including every script that writes a number into
+    `results/`. 📏 The failure that moved it here: `--device cuda` on an Apple
+    laptop died inside `torch.Generator` with a dynamic-linker message about
+    `-Wl,--no-as-needed`, forty lines from anything the user typed.
+
+    🔒 The check is on `EnvConfig` rather than in each CLI so the guarantee is
+    structural: a script that never calls `resolve_device` still cannot build an
+    env on a device that is not there, and a script written next year inherits it.
+    """
+    absent = "cuda" if not torch.cuda.is_available() else None
+    if absent is None:
+        pytest.skip("CUDA is present; nothing to refuse on this machine")
+
+    with pytest.raises(SystemExit, match="CUDA is not available"):
+        EnvConfig(num_envs=2, device=absent)
+    # ⚠️ and the message must say WHY refusing beats falling back, or the next
+    # person just switches to --device cpu and quietly makes an incomparable
+    # measurement
+    with pytest.raises(SystemExit, match="different episodes|DIFFERENT episodes"):
+        EnvConfig(num_envs=2, device=absent)
+
+
+def test_the_device_guard_has_exactly_one_definition():
+    """A second copy is how the eleven scripts came to disagree in the first
+    place. `scripts/train.py` keeps a thin wrapper -- it checks before building
+    anything -- but it must delegate, not reimplement."""
+    from pathlib import Path
+
+    train_src = (Path(__file__).resolve().parents[2] / "scripts" / "train.py").read_text()
+    assert "core_resolve_device" in train_src
+    assert "torch.cuda.is_available()" not in train_src, (
+        "scripts/train.py reimplements the device check instead of delegating to "
+        "src/env/core.resolve_device"
+    )

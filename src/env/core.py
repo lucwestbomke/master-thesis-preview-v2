@@ -381,6 +381,45 @@ F0_CAPACITY_MBPS = channel.DEFAULT_SE_CAP_BPS_HZ * BANDWIDTH_HZ / 1e6
 F0_RADIUS_M = 524.0
 
 
+def resolve_device(name: str | torch.device) -> torch.device:
+    """Validate a device request. ⛔ Never silently degrade a real run to CPU.
+
+    `AGENTS.md`: *"Guard device selection; never silently degrade a real run to
+    CPU."* ☠️ That rule was implemented in **one** place -- `scripts/train.py` --
+    while **eleven** scripts accept `--device`, including every script that writes
+    a number into `results/`: `eval_policy.py`, `measure_credit.py`,
+    `measure_potential.py`, `measure_b0_ablation.py`, `measure_memory_horizon.py`
+    and `eval_fidelity.py`.
+
+    📏 The failure that prompted moving it here: `--device cuda` on an Apple
+    laptop died inside `torch.Generator` with *"Cannot get CUDA generator without
+    ATen_cuda library… one common culprit is a lack of `-Wl,--no-as-needed` in
+    your link arguments"* -- a dynamic-linker message, forty lines from anything
+    the user typed.
+
+    🔒 It lives on `EnvConfig` rather than in each CLI so the guarantee is
+    **structural**: a script that forgets to call it still cannot build an env on
+    a device that is not there, and a script written next year gets the check for
+    free. `scripts/train.py` keeps its own CLI-level call so it fails before
+    doing any setup work.
+    """
+    dev = torch.device(name)
+    if dev.type == "cuda" and not torch.cuda.is_available():
+        raise SystemExit(
+            f"device {str(name)!r} requested and CUDA is not available on this machine. "
+            "⛔ Refusing to run rather than silently falling back to CPU: a number "
+            "measured on CPU is not comparable with one measured on CUDA, because "
+            "torch.Generator streams differ per device and the same seed draws "
+            "DIFFERENT episodes (AGENTS.md)."
+        )
+    if dev.type == "mps" and not torch.backends.mps.is_available():
+        raise SystemExit(
+            f"device {str(name)!r} requested and MPS is not available on this machine. "
+            "⛔ Refusing to run rather than silently falling back to CPU."
+        )
+    return dev
+
+
 @dataclass(frozen=True)
 class EnvConfig:
     num_envs: int
@@ -553,6 +592,9 @@ class EnvConfig:
     training_extras: bool = False
 
     def __post_init__(self) -> None:
+        # 🔒 First, before anything else: a device that is not there must fail
+        # here, with a sentence, rather than forty lines into `torch.Generator`.
+        resolve_device(self.device)
         if self.jammer not in ("J0", "J1", "J2", "J3", "J3B"):
             raise ValueError(f"jammer must be one of J0, J1, J2, J3, J3B, got {self.jammer!r}")
         if self.fidelity not in LADDER:

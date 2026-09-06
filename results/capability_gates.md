@@ -383,7 +383,7 @@ is already **0.620 for the GNN against B0's 0.617**, so the entire 15 pp lives i
 `observed` and a treatment that raises capability *without* raising `observed`
 has done something this file did not predict.
 
-### Result — ⛔ **NULL on both readouts, 2026-09-06.** ⚠️ Verdict pending the validity check.
+### Result — ✅ **NULL, and the precondition passes. 2026-09-06.**
 
 Search: train split, 3 seeds, ranked on worst. Confirmation: eval split, **fresh**
 seeds 100–104. [`gateE.jsonl`](gateE.jsonl).
@@ -483,23 +483,46 @@ extension shows +2.6 at `w = 3`, **−0.07** at `w = 4`, +1.4 at `w = 6`. 🔒 T
 paired seeds moving together is not a dose–response, and this is the second time
 in this project that a monotone-looking 3-point trend did not survive extension.
 
-#### 🔒 What is still owed before this can be called NULL rather than VOID
+#### ✅ NULL — earned. The precondition passes at `w = 6.0`. 2026-09-06.
 
-⛔ The `w = 2.0` arm measured a **14.25 %** differentiable share against a
-declared **20 %**, so it is VOID. The extension does not inherit validity — it
-has to earn it. 📏 The share scales with the weight (B0: 5.2 / 15.5 / 35.6 % at
-`w` = 0.5 / 1 / 2), so `w = 6.0` is the cell most likely to clear the bar:
+📏 `measure_credit.py` on the trained `w = 6.0` policy, CUDA, eval split, stage 4,
+F4/J1, 64 envs, 3 seeds:
 
-```bash
-uv run python scripts/measure_credit.py \
-    --policy runs/gateE2/sw-w_difference6p0__e54208-s0/checkpoint.pt \
-    --device cuda --num-envs 64 --seeds 3 --w-difference 6.0
-```
-
-| outcome | verdict |
+| | share |
 |---|---|
-| **≥ 20 %** | ✅ **NULL, earned.** Per-drone credit demonstrably occupied a fifth or more of the differentiable advantage, and role differentiation got **worse**. That is the *"strongest closure available"* branch, and it closes the credit axis on evidence rather than on exhaustion |
-| **< 20 %** | ⛔ **The instrument cannot be brought into range in this environment.** Reported as an instrument limitation — the credit axis stays **untested**, not closed, and `D_i` is not the tool that can test it here |
+| seed 0 / 1 / 2 | 26.28 % · 35.49 % · 36.56 % |
+| **median** | **35.49 %** |
+| the `difference` term's own between-drone share | 44.57 % |
+| declared precondition | **> 20 %** ✅ (on the worst seed too) |
+| control class ([`credit_assignment.md`](credit_assignment.md)) | 0.04 – 0.16 % |
+
+🔒 **So the signal reached the gradient — by a factor of ~250 over the control
+class — and the deficit did not move.** Against the declared rule:
+
+| readout | control | `w = 6.0` | declared bar | verdict |
+|---|---|---|---|---|
+| `observer_tenure` | 45.4 | **41.0** | ≥ 95 | ⛔ worse |
+| `role_entropy` | 0.492 | **0.603** | — | ⛔ worse |
+| `observer_range_m` | 192.8 | **211.7** | — | ⛔ worse |
+| median `mission_capable` | 45.18 % | 46.60 % | Δ ≥ +3 pp | ⛔ +1.42 pp |
+
+⭐ **This is stronger than `credit_assignment.md`, and in the direction that
+matters.** That file showed the drone-differentiating signal was **absent**
+(0.04–0.16 %) and inferred that role credit *could not* be learned. Gate E
+**supplied** the signal — 35.5 % of the return's differentiable share, above the
+band that file pre-declared as *refuting* its own mechanism — and role
+differentiation still did not appear. ☠️ It got **worse on all three readouts**.
+
+🔍 **So the credit hypothesis is not merely unhelpful; it is refuted as an
+explanation for the deficit.** *"The advantage cannot tell one drone from
+another"* was true and is not the reason the swarm fails to differentiate.
+
+⚠️ **Two honest limits.** (1) `differentiable_share` is measured on the **return**
+and `credit_assignment.md` states it is an *upper bound* on the advantage's share,
+not an estimate — so 35.5 % is a ceiling. It is far above the bar either way.
+(2) **One checkpoint** (`w = 6.0`, training seed 0), three evaluation seeds — the
+same limitation `credit_assignment.md` labels on its own GNN row. ⛔ Do not quote
+it as a 5-training-seed result.
 
 #### ⚠️ Both confirmations landed ~5 pp below their search scores
 

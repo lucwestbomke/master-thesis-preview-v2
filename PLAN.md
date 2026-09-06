@@ -207,7 +207,22 @@ dropped.
 | 4 | **structural**: `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is **0.04–0.16 %** | ✅ **stands, exactly.** Team terms cancel *by construction*; no optimisation changes that. ⭐ And it **names its own successor**: *"What is left is the critic and the advantage, none of which has been touched"* |
 | 5 | **not memory either**: perfect target state is worth **−0.4 pp** | ⚠️ **stands as a bound on TARGET memory, for B0.** [`memory_horizon.md`](results/memory_horizon.md) itself leaves **role-commitment** memory open |
 
-🔍 **Line 4 is not an obstacle to this work — it is the argument for it.** It says
+### ⭐ 2026-09-06: line 4's successor axis was tested too, and it is closed
+
+📏 Gate E supplied the per-drone credit `credit_assignment.md` measured as absent.
+`D_i = G(z) − G(z_{−i})` over **seven weights spanning 12x**: the whole capability
+axis sits inside a single cell's seed noise (2.68 pp against 4.23 pp), and
+`role_entropy` (0.492 → 0.603) and `observer_range_m` (192.8 → 211.7 m) get
+**worse**. 🔒 And it is not a signal-delivery failure: the differentiable share
+reaches **35.5 %** against a **0.04–0.16 %** control class, above the band
+`measure_credit.py` pre-declared as refuting its own mechanism.
+
+☠️ **So *"the advantage cannot tell one drone from another"* is true, and is not
+the reason the swarm fails to differentiate.** Supplying the signal makes role
+differentiation *worse*. Line 4 stands as a measurement and falls as an
+explanation.
+
+🔍 **Line 4 was still the argument for running Gate E.** It says
 no *shaping* knob can move role credit, and points at the return. That is exactly
 what §7's Gate E changes, and it is why the instrument is a difference reward
 rather than a ninth weight.
@@ -268,8 +283,8 @@ declared before the run and never edited afterwards.
 | **A** | velocity setpoints as the action space | ⛔ **not met** — 18.3 pp cost, disjoint. [`gate_a.md`](results/gate_a.md) |
 | **B** | is the heuristic more exploitable? | ✅ **confirmed** — and survived its own `capable_no_division` control. [`gate_b.md`](results/gate_b.md) |
 | **C** | does quantisation hurt coordination more than control? | ⛔ **not run** (RQ4) |
-| **D** | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **not run** — [`capability_gates.md`](results/capability_gates.md) |
-| **E** | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **not run** — same file |
+| **D** | is the learned policy **optimisation-limited** rather than credit-limited? | ⛔ **NULL / REGRESSION, 2026-09-06** — λ is null-to-harmful and 10x the budget costs **32 pp**. [`capability_gates.md`](results/capability_gates.md) |
+| **E** | does **per-drone credit** (`D_i = G − G_{−i}`) produce roles? | ⛔ **NULL, 2026-09-06** — 7 weights over a 12x range, whole axis inside single-cell noise; `role_entropy` and `observer_range_m` get **worse**. ⭐ And the signal *reached the gradient*: 35.5 % differentiable share against a 0.04–0.16 % control class |
 | **F** | is the **observation** lying to the policy? | ⛔ **not run** — same file, lowest prior |
 | Φ v2 | does a steeper potential move the observer? | ⚠️ **killed — and confounded.** 11.8 m of a needed 20 m, measured under ~5,900 Adam steps. §3 |
 | k = 2 | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
