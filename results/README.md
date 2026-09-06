@@ -35,6 +35,34 @@ and the declaration is never edited afterwards — results are appended under it
 | [`j_ladder.md`](j_ladder.md) | is the adversary ladder monotone, and where is its power? | 📏 monotone; **directionality −10.6 pp vs adaptivity −2.9 pp** |
 | [`obs_history_gate.md`](obs_history_gate.md) | does one step of history buy link repair? | ⚠️ **inconclusive** — +1.94 pp, worst seed −1.25 |
 | [`gate_b.md`](gate_b.md) | **is the heuristic more exploitable than a co-trained policy?** | ✅ **CONFIRMED** — 13.24 pp vs 7.51 / 7.29. ⚠️ carries an unresolved **chain-length confound** |
+| [`frontier.md`](frontier.md) | is exploitability a cost of **capability**? | ⛔ **refuted before it was declared** — `b0-geodesic` is more capable than every learned policy *and* less exploitable than all of them |
+| [`repair_gates.md`](repair_gates.md) | is it the loop's **target** or its **amplitude**? | 📏 target: no effect. Amplitude: **dose–response**, and the shipped 200 m is **2x too large** |
+| [`capability_gates.md`](capability_gates.md) | ⭐ **can a learned policy clear B0?** Gates D / E / F / G | ⛔ **D and E both NULL.** 10x the optimisation budget costs **32 pp**; per-drone credit over a 12x weight range sits **inside one cell's seed noise** |
+
+⚠️ **Read [`capability_gates.md`](capability_gates.md) if you are about to
+re-open the capability question.** It re-opened `PLAN.md` §3 on a named confound
+(every prior number was measured at ~5,888 Adam steps), tested it, and **closed it
+again on evidence** — including by *supplying* the per-drone credit
+[`credit_assignment.md`](credit_assignment.md) measured as absent, and watching
+role differentiation get worse. It also carries a **corrections log** — every claim made during the programme
+that a later measurement in it refuted, kept beside the claim it replaced.
 
 ⚠️ **Read `gate_b.md` to the end.** Its verdict stands as declared, but a competing
 explanation was found afterwards and the control for it has not been run.
+
+---
+
+## The raw rows
+
+⚠️ One JSONL per *question*, not per run. The ones this project's gates are
+judged on:
+
+| file | what it holds |
+|---|---|
+| [`gateD_shipped.jsonl`](gateD_shipped.jsonl) / [`gateD_budget.jsonl`](gateD_budget.jsonl) | Gate D's 2 × 4 factorial. ⛔ Two files because the cell key is built from the swept values alone — one `--out` would have made the second sweep skip every cell as *"already recorded"* |
+| [`gateE.jsonl`](gateE.jsonl) / [`gateE2.jsonl`](gateE2.jsonl) | Gate E's `w_difference` axis, 0.0–2.0 then 3.0–6.0 |
+| [`credit.jsonl`](credit.jsonl) | every `measure_credit.py` row, including Gate E's validity checks |
+
+🔒 **Rows carry `search_worst` / `search_median` next to the confirmation.** 📏 Both
+Gate E confirmations landed **~5 pp below** their search score (45.73/46.88 →
+34.76/42.51, and 45.86/47.79 → 37.46/42.09). ⛔ Quote the confirmation.

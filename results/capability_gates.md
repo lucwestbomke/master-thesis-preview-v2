@@ -40,6 +40,29 @@ is not comparable to the table above.
 
 ---
 
+## 🔒 Provenance: everything built for these gates ships OFF
+
+📏 **Verified, not asserted.** A default-config `PPOTrainer` after 6 PPO updates on
+the known-optimum probe is **bit-identical** across the whole change set —
+`torch.equal` over **207,879** actor and critic parameters, checked against a
+`git worktree` at the pre-change commit. So `w_difference`, `mini_batch_size`,
+`target_kl`, `grad_norm_clip_critic`, the two optimizers, `orthogonal_init`,
+`tanh_mean`, `layer_norm`, `cue_mode`, `mask_broadcast_obs` and
+`--checkpoint-every` cannot have moved any inherited number.
+
+⚠️ Two things had to be fixed to keep that true, both silent:
+
+* `min_log_std` became a plain buffer, joined `state_dict()`, and broke **every
+  existing checkpoint** with `Missing key(s)`. It is a configuration constant that
+  already travels in the checkpoint blob — `persistent=False`.
+* `tanh_mean` and `layer_norm` change what the network *computes* without changing
+  the shape of its state dict, so a loader that missed them would score a
+  different function and `load_state_dict` would raise nothing. Both are written
+  at the top level of the checkpoint, next to `obs_history`, and every loader
+  defaults them to the pre-change behaviour.
+
+---
+
 ## §0 Why this is not a ninth intervention
 
 📏 **The frozen axis.** [`docs/inherited/BLOCK_G.md`](../docs/inherited/BLOCK_G.md)
@@ -313,6 +336,15 @@ move. ⚠️ Factoredness is exact *per step*; over a trajectory `G(z_{−i})(s_
 depends on a joint state that `i`'s past actions influenced, so the discounted sum
 is only approximately factored. That is the standard difference-reward caveat and
 it is stated rather than hidden.
+
+📏 **What the term says, measured.** Under B0 at stage 4 / F4 / J1, `D_i` is
+**non-negative** — `best_relay_capacity` maximises over every chain up to
+`max_hops` *including shorter ones*, so deleting a node only removes options, and
+0.0 % of `(env, drone)` pairs came back negative. So it reads as one bit: **is
+this drone pivotal right now?** It is 1 for **8.75 %** of pairs while the swarm is
+capable **93.75 %** of the time — i.e. `mission` pays all five drones and `D` pays
+the ~0.44 that are actually load-bearing. 🔍 **That gap is the entire content of
+the term**, and it is what `mission` cannot express at any weight.
 
 🔒 **Why it is not `w_relay` again.** `w_relay` is PBRS, so its return-to-go
 **telescopes** to `Φ(s_T) − Φ(s_0)` and the per-drone part largely cancels over a
@@ -830,7 +862,34 @@ only.
 
 ### Result
 
-⛔ **Not yet run.**
+⛔ **Not yet scored** — ⚠️ but the checkpoints likely already exist. Gate E's runs
+were launched with `--train-arg checkpoint-every`, so `runs/gateE*/sw-*-s*/` should
+hold `checkpoint-pNNN.pt` files. 🔒 Scoring them is the only remaining cost, and
+the protocol above binds: **select on train, report that one checkpoint on eval.**
+
+---
+
+## 🔒 Corrections log
+
+⛔ **Kept because a claim that was wrong is part of the evidence for the one that
+replaced it** — the same reason `PLAN.md` §6 keeps its refuted framings. Every
+entry below was made during this programme and refuted by a later measurement in
+it, usually within the hour.
+
+| claim | made | refuted by | where it sits now |
+|---|---|---|---|
+| *"Three quarters of the policy gradient is discarded by the norm clip"* (`grad_kept` 0.20–0.26) | §0, 09-04 | 📏 the real CUDA run: **0.54–0.91**, `grad_norm_actor` **0.032–0.060** against a 0.5 clip. The toy figure came from a 120 k-step **MPS run at 128 envs** and was quoted as if it described the condition under study | §0, corrected in place |
+| *"λ = 0.95 is too short; raising it should help"* — the 18.9-step advantage horizon against B0's 294.7-step tenure | Gate D, 09-04 | 📏 λ is **null-to-harmful**; 0.95 wins the worst seed and 0.995 falls to 36.13 %. The arithmetic was right; higher λ trades bias for **variance**, and there is no budget to average it away | Gate D arm 1 |
+| *"The `--target-kl` controller ran away"* — named as prime suspect for the budget collapse | 09-04 | 📏 `lr_actor` rose to 5.13e-3 and **plateaued** at half of `lr_max`, holding `approx_kl` in [0.0027, 0.0107]. The controller's dead band worked | Gate D arm 2 |
+| *"The budget arm learned better, then forgot"* and *"it fixes the boundary pathology"* | 09-04 | 📏 against the **`deepsets` control in the same sweep**, it leads only at progress 0.044 and is behind from 0.306 on; `at_boundary` is 0.059→0.067 shipped against 0.047→0.058 budget. I had compared to `runs/val-gnn-deep-s*`, a **different architecture** | Gate D arm 2 |
+| The Gate E validity precondition, `approx_kl ≥ 0.008` | Gate D, 09-04 | ⚠️ **one-sided**: it voids a frozen policy and says nothing about a diverged one. Amended to **[0.005, 0.05]** *before* the repaired arm | Gate D |
+| `> 20 %` as Gate E's validity gate | Gate E, 09-04 | ⚠️ borrowed from `measure_credit.py`'s **refute** band and repurposed as a **validity** gate without re-deriving it. The rule still bound — the arm was VOID at 14.25 % — but the criticism is recorded beside it | Gate E |
+| *"`difference_on='observed'` is ~5–6x denser"* | `reward.py`, 09-04 | 📏 **10.87 % vs 9.40 %** under B0, 3.52 % vs 3.50 % under random. Being the **sole** observer is rarer than being a pivotal chain member. The mode was kept with its motivation rewritten as the relay-credit ablation | `src/env/reward.py`, pinned by a test |
+| *"+1.70 pp at `w = 2.0`, 3/3 paired seeds"* read as an effect | Gate E, 09-06 | 📏 the extension gives +2.6 at `w = 3`, **−0.07** at `w = 4`, +1.4 at `w = 6`. ⚠️ **Second** time in this project a monotone 3-point trend has not survived extension | Gate E |
+
+🔍 **What the pattern says about method, not about the model.** Every one of these
+was refuted by a measurement costing minutes, because the gate was declared first
+and the readout named before the run. ⛔ None was caught by re-reading the claim.
 
 ---
 
@@ -842,4 +901,6 @@ only.
 | **DAgger from B0** | Held as the fallback if D, E and F all fail. [`bc_init.py`](../scripts/bc_init.py) exists and has never been reported; [`memory_horizon.md`](memory_horizon.md) predicts DAgger fixes the 9.4 % clone, since the collapse is covariate shift rather than missing memory. ⚠️ A teacher-initialised policy is a **probe**, not a like-for-like RQ2 or Gate B arm |
 | **recurrence** | ⛔ [`memory_horizon.md`](memory_horizon.md) closed *target* memory with a hard oracle bound (perfect target state is worth **−0.4 pp**). It explicitly leaves **role-commitment** memory open — but that is what Gate E attacks, far more cheaply and with a lower bug density |
 | **wider / deeper networks** | 📏 RQ2 measured architecture at ±1 pp across three rungs and MLP → DeepSets → GNN at 35.6 / 42.5 / 45.1. Capacity is not the suspect, and the actor is 137 k parameters against ~5,900 gradient steps — the budget binds long before the width does |
+| **the `tanh` on the policy mean** | 📏 Measured but not gated: **B0 saturates at least one action axis on 32.6 % of steps** (x 15.0 %, y 19.8 %, stage 4 / F4, 64 envs x 400 steps), which a `tanh` mean reaches only asymptotically — `atanh(0.999) = 3.80`, `atanh(0.9999) = 4.95`. `--no-tanh-mean` exists and `core._advance_drones` already clamps, so only the density moves. ⚠️ It rode in Gate D's five-knob screening arm and was never isolated |
+| **the z action dimension** | 📏 Near-degenerate: `total_power_w` depends on **speed, not altitude**, climbing costs only a transient `W*v_z/eta`, and `ALT_MAX_M = 80` is a *derived* ceiling — so the optimum is constant. B0's mean `\|a_z\|` is **0.006** with std **0.053**, against 0.46 / 0.52 on x / y. A scalar exploration sigma spends a third of its budget there. 🔧 `--initial-log-std` / `--min-log-std` now take a per-dimension vector; ⛔ collapsing `ACTION_DIM` to 2 breaks every checkpoint and is not proposed on this alone |
 | **velocity action space** | ⛔ Gate A. ⚠️ Its own kill branch named exploration as the next suspect and `entropy_loss_scale` has been 0.0 throughout; `--entropy` and `--min-log-std` are now sweepable, so that follow-up is reachable — but it is Gate A's, not this file's |

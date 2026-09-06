@@ -54,17 +54,48 @@ of measured evidence:
   20 rows — so the objective is not misspecified;
 * 📏 **eight pre-declared interventions, eight nulls**, the last with a
   *measured-adequate* gradient;
-* 📏 and the reason is **structural**: one value per global state broadcast across
-  `N` rows makes `Var_i(A) = Var_i(G)` exactly, and that between-drone variance is
-  **0.04–0.16 %** of the total. Only `energy` and `effort` can differ between
-  drones at all — every other reward term is `team(x)`-broadcast and cancels
-  exactly. ⛔ So no shaping knob can move role differentiation, which retro-predicts
-  the eight nulls. [`results/credit_assignment.md`](results/credit_assignment.md).
+* 📏 and the reason looked **structural**: one value per global state broadcast
+  across `N` rows makes `Var_i(A) = Var_i(G)` exactly, and that between-drone
+  variance is **0.04–0.16 %** of the total. Only `energy` and `effort` can differ
+  between drones at all — every other reward term is `team(x)`-broadcast and
+  cancels exactly. ⛔ So no shaping knob can move role differentiation, which
+  retro-predicts the eight nulls.
+  [`results/credit_assignment.md`](results/credit_assignment.md).
 
-⛔ **So stop asking whether learned control beats the heuristic on the static
-task.** The protagonist is the strongest available policy and it happens to be
-scripted; the question asked of it is how much of that capability an adversary
-can take away.
+### ⭐ 2026-09-06: the axis was RE-OPENED, tested on three fronts, and closed on evidence
+
+⚠️ This section read *"stop asking"* until 2026-09-06. The eight nulls turned out
+to share **one uncontrolled variable** — every number in `results/` was measured
+at ~5,888 Adam steps with a 40,960-row minibatch and `approx_kl` at 0.002–0.004,
+because `docs/inherited/BLOCK_G.md` held gradient density constant across all
+three cadences and put the learning rate explicitly out of its sweep. That is a
+legitimate reason to re-open, and it was re-opened.
+
+📏 **Three pre-declared gates later, the premise stands — and now stands *tested*.**
+[`results/capability_gates.md`](results/capability_gates.md):
+
+| axis | what was varied | verdict |
+|---|---|---|
+| **optimisation** (Gate D) | λ ∈ {0.95 … 0.995} × {shipped, 10x budget}, 8 cells | ⛔ λ null-to-harmful; **10x the gradient budget costs 32 pp** |
+| **per-drone credit** (Gate E) | `D_i = G(z) − G(z_{−i})`, 7 weights over a **12x** range | ⛔ whole capability axis **inside one cell's seed noise** (2.68 pp vs 4.23 pp) |
+| the credit *signal itself* | `differentiable_share` on the trained policy | ⭐ **35.5 %** against a **0.04–0.16 %** control class — delivered, and the deficit got **worse** |
+
+☠️ **So `credit_assignment.md`'s finding stands as a measurement and falls as an
+explanation.** *"The advantage cannot tell one drone from another"* is true; it is
+**not** why the swarm fails to differentiate. Gate E supplied the missing signal —
+above the band `measure_credit.py` pre-declared as *refuting* its own mechanism —
+and `role_entropy` (0.492 → 0.603) and `observer_range_m` (192.8 → 211.7 m) both
+got worse.
+
+🔒 **Across all ten pre-declared interventions**, `observer_range_m` sits at
+**187–212 m** against B0's **90**, `observer_tenure` at **40–47** against **295**,
+and `role_entropy` at **0.49–0.60** against **0.062**. Nothing moves them.
+
+⛔ **So the premise is not "nobody checked" — it is "checked on three independent
+axes, and it holds."** The protagonist is the strongest available policy and it
+happens to be scripted; the question asked of it is how much of that capability an
+adversary can take away. ⚠️ Re-opening it again needs a *new* mechanism and a gate
+declared before its run, not another sweep of a knob.
 
 **Four objectives, one arc** — an adversary that adapts → a policy co-trained
 against it → running on the hardware that has to fly it. Full text in
