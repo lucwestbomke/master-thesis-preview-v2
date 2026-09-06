@@ -49,26 +49,40 @@ from src.env.core import resolve_device as core_resolve_device
 from src.env.reward import PHI_V2, RewardWeights, pbrs_safe_fields, weight_constraints_satisfied
 from src.models import ARCHITECTURES, SwarmActor, SwarmCritic, parameter_count
 from src.training.curriculum import CurriculumSchedule
-from src.training.ppo import CADENCES, PPOConfig, PPOTrainer, mission_diagnostics
+from src.training.ppo import CADENCES, MissionDiagnostics, PPOConfig, PPOTrainer
 
-#: What a log line shows. Ordered so a run can be read down the column.
+#: What a log line **prints**. Ordered so a run can be read down the column.
+#:
+#: 🔒 **Optimisation first, behaviour second**, per `docs/CAPABILITY_BRIEF.md` §3:
+#: *"Watch `approx_kl` and `grad_kept` before `mission_capable`. If the policy is
+#: not moving, the headline metric cannot tell you anything."* Every run in
+#: `results/` was read the other way round, off a table that opened with `reward`
+#: and `mission_capable` and put `approx_kl` tenth.
+#:
+#: ⚠️ This tuple is the **printed** subset, not the logged one. `on_log` writes the
+#: whole row to `log.jsonl`, so `grad_norm_actor`, `grad_norm_critic`, `log_std`,
+#: `speed_ms`, `value_loss`, `policy_loss`, `entropy`, `lr_actor`,
+#: `return_spread_between_drones` and the per-axis `sat_*` columns are all still
+#: recorded -- `scripts/inspect_run.py` reads them. Nothing is dropped from the
+#: record; the terminal is 200 columns wide and the log is not.
 WATCH = (
     "progress",
+    "adam_steps",
+    "approx_kl",
+    "clip_fraction",
+    "grad_kept",
+    "sigma_x",
+    "sigma_y",
+    "sigma_z",
+    "sat_any",
     "reward",
     "mission_capable",
     "observed",
     "e2e_mbps",
-    "speed_ms",
-    "at_speed_cap",
+    "observer_run",
     "at_boundary",
-    "log_std",
-    "approx_kl",
-    "grad_norm_actor",
-    "grad_norm_critic",
-    "grad_kept",
-    "value_loss",
+    "at_speed_cap",
     "explained_variance",
-    "return_spread_between_drones",
     "steps_per_s",
 )
 
@@ -516,7 +530,11 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         total_timesteps=a.timesteps,
         curriculum=None if a.no_curriculum else _schedule(a),
         seed=init_seed,
-        diagnostics=mission_diagnostics,
+        # ⭐ The stateful form: `mission_diagnostics` plus `observer_run`, the
+        # training-time proxy for the metric that has refused to move under all
+        # ten pre-declared interventions. ⚠️ Not comparable with `evaluate.py`'s
+        # 294.7 -- see `MissionDiagnostics`.
+        diagnostics=MissionDiagnostics(),
     )
 
     tag = a.tag or f"{a.fidelity}-{a.arch}-{a.cadence}"

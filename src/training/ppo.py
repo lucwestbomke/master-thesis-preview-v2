@@ -171,6 +171,17 @@ CADENCES: dict[str, dict[str, int]] = {
 }
 
 
+#: Names for the first three action dimensions, so `sigma_z` and `sat_z` read as
+#: the altitude axis rather than as "column 2". ⚠️ Positional, not semantic: a
+#: benchmark actor with a 1-D or 2-D action reuses `x` and `y` and means something
+#: else by them. `scripts/bench_trainer.py` is the only caller that does.
+_ACTION_AXES = ("x", "y", "z")
+
+
+def _axis(i: int) -> str:
+    return _ACTION_AXES[i] if i < len(_ACTION_AXES) else f"d{i}"
+
+
 @dataclass
 class PPOConfig:
     """Everything the algorithm reads. Defaults reproduce the inherited runs.
@@ -347,6 +358,13 @@ class PPOTrainer:
         # `mini_batches` would silently change which episodes a seed sees.
         self.gen = torch.Generator(device="cpu").manual_seed(seed)
         self.timestep = 0
+        #: ☠️ **The confound `docs/CAPABILITY_BRIEF.md` §0 names, counted rather
+        #: than derived.** Every number in `results/` was measured at ~5,888 Adam
+        #: steps and nobody knew, because the figure had to be computed by hand
+        #: from `timesteps / (num_envs * rollouts) * epochs * mini_batches`. It is
+        #: now a column in every log line, so a run that never optimised cannot be
+        #: read as a task result again.
+        self.adam_steps = 0
 
         # Widths come from one real observation rather than from the env's
         # config, so the known-optimum probe in `probe.py` and the mission share
@@ -443,6 +461,7 @@ class PPOTrainer:
     def collect(self) -> Tensor:
         """Fill the buffer. Returns `last_values`, `(rows,)`, in raw units."""
         b, n = self.env.cfg.num_envs, self.env.cfg.num_drones
+        a = self.buf["action"].shape[-1]
         for t in range(self.cfg.rollouts):
             if self.curriculum is not None:
                 self.curriculum.update(self.timestep)
@@ -477,6 +496,16 @@ class PPOTrainer:
             self.obs = obs
             self.timestep += b
             row = {"reward": reward.mean(), "action_abs": action.abs().mean()}
+            # 📏 **Saturation, per axis, on the SAMPLED action.** `AGENTS.md`
+            # records B0 saturating at least one axis on **32.6 %** of steps
+            # (x 15.0 %, y 19.8 %), and `docs/CAPABILITY_BRIEF.md` §3 asks for the
+            # learned policy's figure beside it. Measured on the sample rather
+            # than on the mean because that is what `core._advance_drones`
+            # actually clamps, and because a `tanh` mean can never reach ±1 while
+            # its samples do.
+            saturated = action.abs() >= 1.0
+            row |= {f"sat_{_axis(i)}": saturated[:, i].to(torch.float32).mean() for i in range(a)}
+            row["sat_any"] = saturated.any(dim=-1).to(torch.float32).mean()
             if self.diagnostics is not None:
                 row |= self.diagnostics(self.env, extras)
             self._accumulate(row)
@@ -582,6 +611,15 @@ class PPOTrainer:
                 surrogate = advantages[idx] * ratio
                 clipped = advantages[idx] * ratio.clamp(1 - cfg.ratio_clip, 1 + cfg.ratio_clip)
                 policy_loss = -torch.min(surrogate, clipped).mean()
+                # 📏 The standard PPO companion to `approx_kl`, and the one this
+                # project never had. It answers a question `approx_kl` cannot: a
+                # small KL with a **zero** clip fraction is a policy that is not
+                # moving, while a small KL with a large clip fraction is a policy
+                # being *held back* by the trust region. `docs/CAPABILITY_BRIEF.md`
+                # §3 wants 0.05-0.20; the inherited runs sit at `approx_kl`
+                # 0.002-0.004 and nobody could tell which of the two it was.
+                with torch.no_grad():
+                    clip_fraction = ((ratio - 1.0).abs() > cfg.ratio_clip).to(ratio.dtype).mean()
 
                 predicted = self.critic(state[idx]).squeeze(-1)
                 squared = (predicted - returns[idx]).pow(2)
@@ -644,12 +682,23 @@ class PPOTrainer:
                     )
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+                self.adam_steps += 1
 
+                # 📏 **Per-dimension sigma.** `log_std` alone is a mean over the
+                # three axes and hides the thing worth watching: `AGENTS.md`
+                # records B0's mean |a_z| at **0.006** against 0.46 / 0.52 on
+                # x / y, so z has nothing to explore and *should* collapse while
+                # x and y must not. One column each is the only way to see that
+                # happen, and `--min-log-std` is already per-dimension.
+                sigma = self.actor.log_std.detach().clamp(max=self.actor.max_log_std)
+                sigma = torch.maximum(sigma, self.actor.min_log_std).exp()
+                self._accumulate({f"sigma_{_axis(i)}": sigma[i] for i in range(sigma.numel())})
                 self._accumulate(
                     {
                         "policy_loss": policy_loss,
                         "value_loss": value_loss,
                         "approx_kl": kl,
+                        "clip_fraction": clip_fraction,
                         "entropy": entropy.mean(),
                         "log_std": self.actor.log_std.mean(),
                         "lr_actor": torch.tensor(
@@ -736,6 +785,9 @@ class PPOTrainer:
                 row = self._drain() | {
                     "round": r,
                     "timestep": self.timestep,
+                    # ☠️ A total, not a per-round mean, so it does NOT go through
+                    # `_accumulate`. See `self.adam_steps`.
+                    "adam_steps": self.adam_steps,
                     "elapsed_s": elapsed,
                     "steps_per_s": self.timestep / max(elapsed, 1e-9),
                     "progress": self.timestep / max(total_timesteps, 1),
@@ -834,3 +886,52 @@ def mission_diagnostics(env: BatchedSwarmEnv, extras: dict[str, Tensor]) -> dict
         "at_speed_cap": (speed > 24.0).to(f).mean(),
         "at_boundary": at_wall.to(f).mean(),
     }
+
+
+class MissionDiagnostics:
+    """`mission_diagnostics` plus the one signal that needs memory across steps.
+
+    ⭐ **Observer tenure during training.** `docs/CAPABILITY_BRIEF.md` §3 asks for
+    it in the log, and it is the metric that has refused to move under all ten
+    pre-declared interventions: 📏 **40-47 steps** for every learned policy against
+    B0's **294.7**. Until now it existed only inside `src/baselines/evaluate.py`,
+    i.e. only *after* a run, so a configuration that was going to null on it could
+    not be spotted while it was still running.
+
+    ⚠️ **This is a proxy and it is NOT comparable with the 294.7.** `evaluate.py`
+    builds the observer identity with handoff and lead bookkeeping over full
+    deterministic episodes; this counts, per environment, how long the
+    `argmax` of `sees_hvt` stays on the same drone under a *stochastic* policy on
+    a *curriculum mix*, and it charges an unbroken run against the rollout
+    boundary rather than the episode boundary. ⛔ Read it as a trend within one
+    run, exactly like `at_boundary`. Every reported number still goes through
+    `evaluate.py`.
+
+    🔒 Device discipline: the tenure state is a device tensor and the accumulation
+    is a device tensor. There is no `.item()` here, so this adds no sync to the
+    hot loop (`AGENTS.md`).
+    """
+
+    def __init__(self) -> None:
+        self.run: Tensor | None = None
+        self.previous: Tensor | None = None
+
+    def __call__(self, env: BatchedSwarmEnv, extras: dict[str, Tensor]) -> dict[str, Tensor]:
+        row = mission_diagnostics(env, extras)
+        sees = extras["sees_hvt"]  # (B, N) bool
+        covered = sees.any(dim=-1)
+        # `argmax` over a bool row picks the lowest-index observer, which is the
+        # same tie-break `evaluate.py` uses.
+        current = sees.to(torch.int8).argmax(dim=-1)
+        if self.run is None or self.run.shape != current.shape:
+            self.run = torch.zeros_like(current, dtype=torch.float32)
+            self.previous = current.clone()
+        same = (current == self.previous) & covered
+        # A step with no observer at all does not extend a run and does not end
+        # one -- it is simply not attributable, which is how `evaluate.py` gates
+        # its own role bookkeeping on `covered`.
+        self.run = torch.where(
+            covered, torch.where(same, self.run + 1.0, torch.ones_like(self.run)), self.run
+        )
+        self.previous = torch.where(covered, current, self.previous)
+        return row | {"observer_run": self.run.mean()}
