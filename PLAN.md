@@ -453,6 +453,12 @@ and kept below as the record. What remains is ordered so that the deliverable
 which **cannot fail** is first, the instrument is **time-boxed**, and RQ1's
 replication lands before anything is written up.
 
+⭐ **Execution detail lives in [`docs/ROADMAP.md`](docs/ROADMAP.md)**, split out
+2026-09-06 the way [`docs/HISTORY.md`](docs/HISTORY.md) was split out of §3. This
+table stays as the ordering and the rationale; that file carries, per item, the
+hypothesis under test, the branch that would refute it, the machine it runs on,
+and where its declaration lives. ⛔ It declares nothing of its own.
+
 | | what | serves | cost |
 |---|---|---|---|
 | **1** | ✅ **ONNX export, locally** — **done 2026-09-06**, all three rungs | RQ3 | days, no training |

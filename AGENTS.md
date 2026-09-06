@@ -257,6 +257,7 @@ probe did not.
 |---|---|
 | [`PLAN.md`](PLAN.md) | **start here** — the claim, the three RQs, the phases, the gates declared before the runs |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | **before writing any of it down** — one definition each for adaptation, loop amplitude, loop target, exploitability, damage, exploitation, off-diagonal, dose–response, disjoint, and for gate / instrument / arm / probe |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | **deciding what to work on next** — everything left, per item: the hypothesis, what would refute it, which machine it needs, and where its declaration lives. Execution detail for `PLAN.md` §7 |
 | [`docs/HISTORY.md`](docs/HISTORY.md) | **before re-opening the capability question** — the re-opening, its arithmetic, the correction made during it, Gate D's verdict, the five lines and Gate E. Split out of `PLAN.md` §3 on 2026-09-06, verbatim |
 | [`docs/REDUCTION.md`](docs/REDUCTION.md) | **second** — what was carried over that still has to come out, in order |
 | [`docs/INHERITED.md`](docs/INHERITED.md) | quoting any constant. Every measured number that carries forward, with provenance |
