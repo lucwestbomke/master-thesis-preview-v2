@@ -455,7 +455,7 @@ replication lands before anything is written up.
 
 | | what | serves | cost |
 |---|---|---|---|
-| **1** | **ONNX export, locally** — this week | RQ3 | days, no training |
+| **1** | ✅ **ONNX export, locally** — **done 2026-09-06**, all three rungs | RQ3 | days, no training |
 | **2** | **the redundancy metric** | RQ2 | half a day, no training |
 | **3** | **Gates D–F** — 🔒 three-week box, §3 | the instrument | ~4 GPU-hours, inside the box |
 | **4** | **the second-environment replication** | RQ1 | scripted controllers, no training |
@@ -469,6 +469,28 @@ risk is **unretired and cheap to close**, and it closes on a laptop before
 anything is flashed to a Jetson. ⚠️ A GNN that cannot deploy is a **reported
 result** — its measured advantage over DeepSets is a null anyway. Gate C (§5) is
 declared, verbatim, and waits on this.
+
+#### ✅ **Done, 2026-09-06. The risk is retired — and the export found a bug.**
+
+📏 [`scripts/export_onnx.py`](scripts/export_onnx.py), `onnx 1.22.0` /
+`onnxruntime 1.29.0`, opset 20, all three rungs checked numerically against the
+PyTorch module at three different row counts. Full table in
+[`results/capability_log.md`](results/capability_log.md).
+
+* ✅ **All three rungs export and are numerically exact** (max abs error < 1.3e-07)
+  under torch 2.13's default `dynamo` exporter. 🔍 **PyTorch Geometric was never
+  the risk it looked like**: `RelationalTrunk` is a custom MPNN in plain torch —
+  forced by `docs/inherited/MODELS.md`'s rule that the DeepSets rung must be the
+  GNN with `e_ij` zeroed — so **PyG is not on the actor's forward path at all.**
+* ☠️ **Under the legacy TorchScript exporter the `deepsets` rung is silently
+  wrong.** It exports, passes `onnx.checker`, runs at the traced batch size, and
+  throws at any other one. 📏 The traced graph carries a `Constant` of shape
+  `[5, 7, 2]` — traced batch × neighbour slots × `EDGE_DIM` — which is
+  `torch.zeros_like(edge)` under `use_edges=False`, constant-folded at the traced
+  shape. ⚠️ `deepsets` is `scripts/train.py`'s **default** architecture and the
+  off-N transfer columns run the actor alone at `N ∈ {3, 8}`, so this would have
+  been correct at `N = 5` and broken everywhere else, with no error until it ran.
+* ⛔ **TensorRT is still unretired.** This closes the ONNX half only.
 
 ### 2. Run 4 — the redundancy metric. RQ2. Half a day, then zero training.
 

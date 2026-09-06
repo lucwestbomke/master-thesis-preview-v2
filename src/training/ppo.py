@@ -916,9 +916,13 @@ class MissionDiagnostics:
         self.run: Tensor | None = None
         self.previous: Tensor | None = None
 
-    def __call__(self, env: BatchedSwarmEnv, extras: dict[str, Tensor]) -> dict[str, Tensor]:
-        row = mission_diagnostics(env, extras)
-        sees = extras["sees_hvt"]  # (B, N) bool
+    def advance(self, sees: Tensor) -> Tensor:
+        """One step of the run-length state machine over `sees` `(B, N)` bool.
+
+        🔒 Split out of `__call__` so it can be driven from a test without a live
+        env. `test_ppo.py` pins it; a copy of the logic in the test would only
+        check that the copy agrees with itself.
+        """
         covered = sees.any(dim=-1)
         # `argmax` over a bool row picks the lowest-index observer, which is the
         # same tie-break `evaluate.py` uses.
@@ -934,4 +938,9 @@ class MissionDiagnostics:
             covered, torch.where(same, self.run + 1.0, torch.ones_like(self.run)), self.run
         )
         self.previous = torch.where(covered, current, self.previous)
-        return row | {"observer_run": self.run.mean()}
+        return self.run
+
+    def __call__(self, env: BatchedSwarmEnv, extras: dict[str, Tensor]) -> dict[str, Tensor]:
+        return mission_diagnostics(env, extras) | {
+            "observer_run": self.advance(extras["sees_hvt"]).mean()
+        }

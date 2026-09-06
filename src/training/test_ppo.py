@@ -409,3 +409,111 @@ def test_the_stored_value_reference_is_the_critics_own_output_not_a_round_trip()
     trainer.scaler.update(torch.full((4096,), 300.0))
     trainer.scaler.update(torch.full((4096,), -50.0))
     assert not torch.allclose(trainer.scaler.normalise(raw), normalised, atol=1e-3)
+
+
+# --------------------------------------------------------------------------- #
+# Phase 1 instrumentation -- `docs/CAPABILITY_BRIEF.md` §3
+# --------------------------------------------------------------------------- #
+
+
+def _one_round_log() -> dict:
+    """One short probe run's last log line, with every diagnostic on it."""
+    torch.manual_seed(0)
+    env = BeaconEnv(ProbeConfig(num_envs=16, num_drones=2, seed=0))
+    actor = SwarmActor(architecture="mlp", hidden=32)
+    critic = SwarmCritic(env.state_dim, hidden=32)
+    cfg = PPOConfig(rollouts=HORIZON, learning_epochs=2, mini_batches=2)
+    trainer = PPOTrainer(env, actor, critic, cfg, seed=0, diagnostics=probe_diagnostics)
+    return trainer.train(16 * HORIZON * 2, log_lines=1)[-1]
+
+
+def test_every_diagnostic_the_capability_brief_asks_for_is_logged():
+    """🔒 `docs/CAPABILITY_BRIEF.md` §3's table, as a test rather than as prose.
+
+    ⚠️ The reason this is pinned: five of these did not exist, and their absence
+    is why every run in `results/` was read off `mission_capable` while
+    `approx_kl` sat an order of magnitude below where PPO is designed to run.
+    """
+    row = _one_round_log()
+    for key in (
+        "approx_kl",
+        "grad_kept",
+        "clip_fraction",
+        "explained_variance",
+        "adam_steps",
+        "sigma_x",
+        "sigma_y",
+        "sigma_z",
+        "sat_x",
+        "sat_y",
+        "sat_z",
+        "sat_any",
+    ):
+        assert key in row, f"{key} missing from the log line: {sorted(row)}"
+        assert row[key] == row[key], f"{key} is NaN"
+
+
+def test_grad_kept_is_a_fraction_and_is_not_nan():
+    """☠️ `docs/CAPABILITY_BRIEF.md` §3 calls it *"NaN in every log in runs/"*.
+
+    📏 It is not NaN and never was in this code -- the NaN belongs to logs written
+    before the diagnostic existed, and `results/capability_gates.md` §0 already
+    records the correction. Pinned so a future edit cannot make the brief right.
+    """
+    row = _one_round_log()
+    assert 0.0 < row["grad_kept"] <= 1.0, row["grad_kept"]
+
+
+def test_adam_steps_counts_every_gradient_step_and_only_those():
+    """☠️ The confound `docs/CAPABILITY_BRIEF.md` §0 names, and it must be exact.
+
+    `rounds * epochs * mini_batches`, with no off-by-one: the whole point is that
+    a run at ~5,900 total steps can be recognised as such from its own log.
+    """
+    row = _one_round_log()
+    assert row["adam_steps"] == 2 * 2 * 2, row["adam_steps"]
+
+
+def test_the_sigma_columns_report_the_floored_deviation_not_the_raw_parameter():
+    """⚠️ `min_log_std` is per-dimension and is what the policy actually samples at.
+
+    Reporting `exp(log_std)` unfloored would show exploration the policy does not
+    have -- and the per-dimension floor exists precisely because 📏 B0's mean
+    `|a_z|` is 0.006 against 0.46 / 0.52 on x / y, so z is expected to sit ON its
+    floor while x and y are not.
+    """
+    torch.manual_seed(0)
+    env = BeaconEnv(ProbeConfig(num_envs=16, num_drones=2, seed=0))
+    actor = SwarmActor(architecture="mlp", hidden=32, initial_log_std=-8.0, min_log_std=-1.0)
+    critic = SwarmCritic(env.state_dim, hidden=32)
+    cfg = PPOConfig(rollouts=HORIZON, learning_epochs=1, mini_batches=1, learning_rate=0.0)
+    trainer = PPOTrainer(env, actor, critic, cfg, seed=0, diagnostics=probe_diagnostics)
+    row = trainer.train(16 * HORIZON, log_lines=1)[-1]
+    floored = float(torch.tensor(-1.0).exp())
+    for axis in ("x", "y", "z"):
+        assert abs(row[f"sigma_{axis}"] - floored) < 1e-6, row[f"sigma_{axis}"]
+
+
+def test_observer_run_needs_memory_and_therefore_is_not_the_plain_function():
+    """⭐ `MissionDiagnostics` carries state across steps; `mission_diagnostics`
+    cannot, which is why observer tenure never appeared in a training log.
+
+    ⚠️ Only the state machine is pinned, not the metric: a run that stays on one
+    observer must count up, one that hands over must reset to 1, and a step where
+    nobody sees the target must do neither -- it is not attributable, exactly as
+    `evaluate.py` gates its own role bookkeeping on `covered`.
+    """
+    diag = ppo_module.MissionDiagnostics()
+    sticky = torch.tensor([[True, False], [True, False]])
+    swapping = torch.tensor([[False, True], [False, True]])
+    blind = torch.tensor([[False, False], [False, False]])
+
+    for expected in (1.0, 2.0, 3.0, 4.0):
+        assert float(diag.advance(sticky).mean()) == expected
+
+    # Nobody sees: the run neither grows nor breaks.
+    assert float(diag.advance(blind).mean()) == 4.0
+    # A handover resets the run to 1, not to 0 -- the new observer's first step
+    # is already one step of tenure.
+    assert float(diag.advance(swapping).mean()) == 1.0
+    assert float(diag.advance(swapping).mean()) == 2.0

@@ -201,6 +201,8 @@ ranges. It ships off, as a negative result with a mechanism —
 | `src/models/` | MLP / DeepSets / GNN actors, one shared critic. Plain `nn.Module`s | ✅ de-skrl'd |
 | `src/training/ppo.py` | **the trainer.** One-file MAPPO: shared actor, centralized critic | ✅ own, validated |
 | `src/training/probe.py` | known-optimum probe whose optimum **spans the episode** | ✅ own |
+| `scripts/bench_trainer.py` | ⭐ the trainer on **external** benchmarks — `Pendulum-v1`, an analytically-solved LQR, `MountainCarContinuous-v0` | ✅ own |
+| `scripts/export_onnx.py` | every actor rung → ONNX, checked numerically at three row counts. RQ3 / Gate C | ✅ own |
 | `scripts/train.py` | the only entry point into the trainer. Φ flags are derived | ✅ own |
 | `src/training/curriculum.py` | fixed step-count schedule, a pure function of training progress | ✅ inherited |
 | `src/viz/` | scene drawing, episode figures and videos | ✅ inherited |
@@ -212,6 +214,24 @@ from `pyproject.toml`; `src/training/ppo.py` replaces it in ~380 lines with no
 framework. Validated against the inherited number before anything was changed —
 [`results/trainer_validation.md`](results/trainer_validation.md) carries the gate,
 declared before the runs, and the result.
+
+⭐ **And validated against something this project did not write, 2026-09-06.**
+📏 [`results/trainer_benchmark.md`](results/trainer_benchmark.md): on `Pendulum-v1`
+it scores a median **−164.6** over 5 seeds against a published *tuned* PPO
+reference of **−172.2 ± 104.2** at the same 100 k-step budget and without gSDE, and
+on an LQR whose optimum is computed in closed form it lands **within 15 % of that
+optimum on its worst seed** against a do-nothing floor at 96×. A `lr = 0` control
+scores −1167. 🔒 So a flat learning curve on the mission is a fact about the
+mission — the trainer reaches reference performance.
+
+☠️ **One instruction died there.** `grad_kept` is **not** a health check: both
+tasks that reach reference performance run at `grad_kept` **0.035–0.238**, far
+below the 0.8 that `docs/CAPABILITY_BRIEF.md` §4 makes Block A's acceptance test,
+and the task that learns nothing has the *highest* `grad_kept` of the three.
+`clip_grad_norm_` rescales rather than truncates, and under Adam a uniformly
+rescaled gradient is very nearly the same update. ⚠️ `approx_kl` remains the
+binding diagnostic, and on the shipped mission configuration it is an order of
+magnitude below every value in that table.
 
 ⚠️ Three things in it are 🔒 and each failed **silently** before: the GAE mask is
 `terminated | truncated`, the truncation bootstrap reads `extras["final_state"]`
@@ -336,7 +356,7 @@ Each is inherited and each was **measured**, not assumed — full reasoning in
 ```bash
 uv sync --extra dev                # `dev` is an EXTRA -- plain `uv sync` gives
                                    # you neither pytest nor ruff
-uv run pytest                      # 392 passed, 4 skipped on arm64 (+ CUDA-gated)
+uv run pytest                      # 465 passed, 4 skipped on arm64 (+ CUDA-gated)
 uv run ruff check . && uv run ruff format .
 ```
 

@@ -593,7 +593,9 @@ def run_one(a: argparse.Namespace, seed: int, weights: RewardWeights) -> Path:
         f"{provenance['critic_params']:,} critic params, "
         f"{num_envs} envs x {rollouts} rollouts, {a.timesteps:,} env-steps"
     )
-    print("    " + "".join(f"{k.replace('_', ' '):>14}" for k in WATCH))
+    # ⚠️ Truncated to 13, because `mission_capable` and `explained_variance` are
+    # longer than the 14-column field and ran into their neighbours.
+    print("    " + "".join(f"{k.replace('_', ' ')[:13]:>14}" for k in WATCH))
 
     with log_path.open("w") as handle:
         handle.write(json.dumps({"provenance": provenance}) + "\n")

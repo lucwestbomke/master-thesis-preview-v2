@@ -201,3 +201,141 @@ in this file, and its value is reported for each — because if the actor's grad
 is being throttled by the critic through the joint norm clip on a task PPO is
 known to solve, that is a property of `ppo.py`'s default configuration and not of
 the relay mission.
+
+---
+
+# Result — ✅ **VALIDATED, 2026-09-06.** Both gated tasks PASS.
+
+📏 CPU, arm64, torch 2.13.0, 5 seeds each, deterministic mean-action evaluation.
+Raw rows in [`trainer_benchmark.jsonl`](trainer_benchmark.jsonl).
+
+## `pendulum` — ✅ **PASS**, and it beats the published *tuned* reference
+
+| | median | worst | best | per seed |
+|---|---|---|---|---|
+| **this trainer**, 100 k steps, 100 eval episodes | **−164.56** | **−220.02** | −149.21 | −220.0 · −171.0 · −164.6 · −149.9 · −149.2 |
+| 📏 `rl-baselines3-zoo` PPO, 100 k steps, **tuned, with gSDE** | −172.23 ± 104.16 | | | |
+| 📏 `cleanrl` `ppo_continuous_action`, 8 M steps, 10 seeds | −1141.98 ± 135.55 | | | |
+| 🔒 **negative control** — same code, `lr = 0`, 3 seeds | **−1167.09** | −1186.68 | | |
+
+✅ **Median −164.56 ≥ −276.4 and worst seed −220.02 ≥ −1006.4.** Both clauses of
+the PASS rule are met, and the median is **7.7 points better than the tuned
+reference mean** at the same step budget, **without gSDE**.
+
+☠️ **And read the control row against the untuned reference.** A trainer with its
+learning rate set to zero scores **−1167.09**; the published `ppo_continuous_action`
+number is **−1141.98 ± 135.55** at 80× the budget. They are indistinguishable.
+🔍 That is not a criticism of `cleanrl` — Pendulum is the documented failure case
+the RPO paper was written about — but it does mean the untuned reference was the
+right thing to put at the FAIL boundary, and it says something about how little a
+"published baseline" guarantees on its own.
+
+## `lqr` — ✅ **PASS** against a reference with no citation in it
+
+| | median | worst | per seed (discounted) |
+|---|---|---|---|
+| **`cost_ratio`** (1.0 = optimal, paired) | **1.092** | **1.154** | 1.127 · 1.107 · 1.098 · 1.068 · 0.978 |
+| discounted return | −13.06 | −13.41 | −13.41 · −13.16 · −13.06 · −12.70 · −11.64 |
+| 🔒 exact analytic optimum, `tr(P_0 Sigma)` | **−11.898** | | |
+| 🔒 do-nothing floor, closed form | −1139.2 | | |
+| 🔒 **negative control**, `lr = 0`, 3 seeds | | | `cost_ratio` **96.2** |
+
+✅ **Worst-seed `cost_ratio` 1.154 ≤ 1.25.** The policy pays 15 % more cost than
+the optimal controller on its worst seed and 9 % on its median, against a
+do-nothing floor at 96×.
+
+⚠️ **Seed 4's 0.978 is not "better than optimal".** The analytic value is an
+expectation over `x_0 ~ U[-1,1]^4` while a seed's eval is 256 sampled episodes; the
+paired *simulated* optimum on the same states is what makes the ratio meaningful,
+and a single seed can sit slightly under 1.0 on it. It is inside the same noise
+that puts the simulated optimum 0.8 se from the analytic one.
+
+## `mountaincar` — ⛔ fails at ≈ 0, **exactly as declared before the run**
+
+📏 median **−0.016**, worst **−0.035**, against the tuned reference's **88.343 ±
+2.572**. The declaration predicted *"this task FAILS, at approximately 0"* and
+gave the mechanism: a diagonal Gaussian at `sigma ≈ 0.032` never reaches the goal,
+where gSDE's temporally-correlated noise does. ⛔ Ungated, and it stays ungated.
+
+⭐ It earns its place anyway: it is the arm that shows the suite can distinguish
+*"the trainer is fine"* from *"everything passes"*.
+
+## 🔒 Diagnostics, reported whatever the branch
+
+| | `pendulum` (PASS) | `lqr` (PASS) | `mountaincar` (fails) | brief §3 "healthy" |
+|---|---|---|---|---|
+| **Adam steps** | 16,000 | 78,240 | 3,130 | — (📏 the mission runs 5,888) |
+| `approx_kl` | 0.0143 – 0.0340 | 0.0199 – 0.0275 | 0.0008 – 0.0023 | 0.01 – 0.02 |
+| `clip_fraction` | 0.104 – 0.257 | 0.133 – 0.215 | 0.039 – 0.125 | 0.05 – 0.20 |
+| ☠️ **`grad_kept`** | **0.152 – 0.238** | **0.035 – 0.040** | 0.564 – 0.889 | **> 0.8** |
+| `grad_norm_actor` | 1.11 – 1.70 | 18.3 – 22.9 | 5.10 – 10.01 | — |
+| `grad_norm_critic` | 2.34 – 3.90 | 0.0023 – 0.0079 | 0.0046 – 0.0159 | — |
+| `explained_variance` | 0.9990 – 0.9996 | 0.868 – 0.984 | 0.997 – 0.999 | do not let it fall |
+| final `sigma` | 0.25 – 0.37 | 0.0081 – 0.0096 | 0.031 – 0.032 | — |
+| wall clock / seed | 17 s | 79 s | 3 s | — |
+
+### ☠️ The finding that changes an instruction in the brief
+
+📏 **Both tasks that PASS have `grad_kept` far below 0.8, and the one that fails
+has the highest `grad_kept` in the table.**
+
+* `lqr` reaches **within 15 % of an exactly-computed optimum** while the joint norm
+  clip discards **96 %** of the actor's gradient (`grad_norm_actor` 18–23 against a
+  0.5 clip).
+* `pendulum` **beats a published tuned baseline** while discarding **76 – 85 %**.
+* `mountaincar` keeps **56 – 89 %** of its gradient and learns nothing.
+
+⛔ So `grad_kept` is **not** a health check, and
+`docs/CAPABILITY_BRIEF.md` §4's Block A acceptance test — *"`grad_kept` > 0.8 and
+`approx_kl` above 0.005"* — **would have rejected both configurations that reach
+reference performance.** 🔍 The mechanism is not mysterious: `clip_grad_norm_`
+rescales, it does not truncate, so under Adam a uniformly rescaled gradient is
+very nearly the same update. What the clip actually costs is the *relative*
+weighting between the actor and the critic in the joint norm, and both PASS runs
+show that costing nothing measurable.
+
+🔒 **Recommendation, for Phase 2's declaration and not applied here:** raise
+`grad_norm_clip` if `grad_norm_actor` says the clip binds, but do **not** gate
+Block A on `grad_kept`. `approx_kl` and `clip_fraction` together already say
+whether the policy is moving, and on the shipped mission configuration they say it
+is not — `approx_kl` 0.002–0.004 against 0.014–0.034 here.
+
+⚠️ **What this does NOT say.** It does not say the mission's `grad_kept` is
+harmless; it says a low `grad_kept` is not by itself evidence of a broken run, so
+it cannot carry the Block A gate. The mission's binding constraint is still
+`approx_kl`, which is an order of magnitude below every value in this table.
+
+## ⚠️ Limitations, stated rather than left to be found
+
+* ⛔ **The truncation bootstrap is not discriminated by these tasks.** 📏 Measured:
+  `lqr` at 500 k steps with `time_limit_bootstrap=False` scores `cost_ratio`
+  **0.937** against the correct **0.961** — indistinguishable. 🔍 The reason is
+  structural: an LQR policy drives the state to the origin, so `V(x_final) ≈ 0` and
+  there is nothing for the bootstrap to add. Pendulum truncates at 200 steps with a
+  large ongoing negative reward and `gamma = 0.9`, which also suppresses it.
+  `src/training/probe.py` records the same blind spot from the other side
+  (📏 32.4 against 32.7). ⭐ **The truncation bootstrap in `ppo.py` remains covered
+  only by its unit tests**, and this file does not change that.
+* ⛔ **No locomotion task.** The brief asks for *"a Gym/Brax locomotion task"*.
+  MuJoCo and Box2D are not installed and both are dependency additions that
+  `AGENTS.md` requires flagging; `Pendulum-v1` and `MountainCarContinuous-v0` are
+  what `gymnasium` provides out of the box here. ⚠️ So the trainer is validated on
+  4-D and 3-D observation spaces and **not** on a high-dimensional one.
+* ⚠️ **`BenchActor` is not `SwarmActor`'s trunk.** The relational trunks, the
+  observation unpacking and the max-N padding are not exercised here. They are
+  exercised by `src/training/probe.py`, which pads into the real `FLAT_DIM`.
+* ⚠️ **CPU, single machine.** ⛔ No number here is comparable with anything in
+  `results/`.
+
+## 🔒 Consequence for the programme
+
+✅ **The trainer reaches reference performance, so a flat learning curve on the
+mission is attributable to the task and not to the optimiser.** Gates D and E keep
+their readings, the eight prior nulls keep theirs, and
+[`credit_assignment.md`](credit_assignment.md)'s structural finding is not
+weakened by an implementation doubt.
+
+⛔ **It does not settle the budget question.** `docs/CAPABILITY_BRIEF.md` §0's
+diagnosis is about `approx_kl` at 0.002–0.004 and ~5,888 Adam steps, and this file
+says nothing about either — it says the code that would consume a larger budget is
+correct. 📏 Gate D already ran that experiment and returned REGRESSION.
