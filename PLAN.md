@@ -40,7 +40,10 @@ happens next.**
 
 ### The claim itself
 
-> 🔍 **Exploitability decomposes into damage and a control loop:**
+> 🔍 **An adaptive controller cannot be defended by changing what it adapts ON —
+> only by bounding how far it adapts.**
+>
+> **Exploitability decomposes into damage and a control loop:**
 > `gap = f(threshold proximity) + g(loop AMPLITUDE)`.
 >
 > An adversary exploits a policy by **leading it out of position**. The cost scales
@@ -49,6 +52,13 @@ happens next.**
 >
 > ⛔ The loop is not the only term, and for a policy sitting on the capability
 > threshold it is not the dominant one.
+
+⭐ **Reframed 2026-09-09 — which sentence LEADS.** ⛔ **Nothing measured changed**,
+and no clause was deleted. *"Adaptation creates exploitability"* is measured and
+stands, but it is close to folklore — a reader can guess the direction without the
+experiment — so it now reads as the **premise** it deserves to be. 📏 **The target
+null is the result a reader could not have guessed**, and it refuted this
+project's own pre-declared hypothesis, so it leads instead. §6 carries the row.
 
 A swarm of `N = 5` UAVs observes a moving ground target and relays the feed to a
 command vehicle over a multi-hop chain at >= 15 Mbps, while a directional jammer
@@ -77,8 +87,11 @@ gap; `random` adapts to nothing and has the smallest gap of all (2.05 pp).
 
 ⛔ **This is not a scripted-versus-learned claim.** 📏 Both extremes of the range
 are *scripted* and every learned policy sits between them. The variable is whether
-the policy closes a loop on the jammed quantity, and whether that loop was trained
-against an adversary. Full record: [`results/frontier.md`](results/frontier.md).
+the policy closes a positional loop **at all**, **how far** that loop may move it,
+and whether it was trained against an adversary. ⛔ **Not** what the loop is scored
+on — 📏 that was tested and nulled, 13.37 against 13.24
+([`repair_gates.md`](results/repair_gates.md)). Full record:
+[`results/frontier.md`](results/frontier.md).
 
 ⚠️ **The loop is worth its cost.** At J3B, B0 still scores **43.8 %** against
 geodesic's **39.7 %**. Adaptivity is a good trade; the point is that the cost is
@@ -429,10 +442,20 @@ verdict. ⛔ Split out on 2026-09-06, verbatim; nothing was deleted.
 | *The adversary ladder is non-monotone; adaptivity does not help* | the 5-seed CUDA re-run **reversed** a one-seed CPU result | 2026-09-03 |
 | *Exploitability is a cost of **capability*** | the frontier run: `b0-geodesic` is **more capable than every learned policy and less exploitable than all of them** | 2026-09-04 |
 | *Four objectives, with the capability programme as an RQ* | superseded by three RQs; the capability programme is an instrument, not an objective | reframed 2026-09-06 |
+| *"Adaptation creates exploitability"* as the **headline** | ⛔ **not refuted — demoted.** The claim is measured and stands. It is close to folklore: an adversary leading an adaptive controller out of position is guessable *a priori*, so as a headline it advertises the one part of this work a reader did not need the experiment for. 📏 **The target null leads instead** — clearance **13.37** against capacity **13.24**, overlapping, the intuitive fix pre-declared and refuted, with the coupling named (the router picks the widest path and the jammer sets capacity). [`repair_gates.md`](results/repair_gates.md) | reframed 2026-09-09 |
 
-⚠️ **The last row is a *reframing*, not a refutation.** No measurement killed it —
-the organisation of the same evidence changed, and it is recorded here rather than
-applied silently. §2 carries the old → new mapping.
+⚠️ **The last two rows are *reframings*, not refutations.** No measurement killed
+either — the organisation of the same evidence changed, and both are recorded here
+rather than applied silently. §2 carries the four-objectives row's old → new
+mapping; the 2026-09-09 row changes **which sentence leads §1** and nothing else.
+
+🔒 **The 2026-09-09 row is the one to check this file against.** ⛔ A framing that
+survives because it is *obviously true* has not been tested by anything, and this
+project's record is that the claims worth keeping are the ones that **refuted a
+pre-declaration** — rows 2 and 3 above, and the target null. ⚠️ `repair_gates.md`
+refuted §1's sharp clause on 2026-09-04 and **`AGENTS.md` still carried it for
+five days**; the lesson is that a headline is not a summary, and it goes stale
+where the evidence does not.
 
 🔒 **The third was refuted *before it was declared*,** because it was fitted over
 eight policies rather than written down after four. ⛔ Hold the current claim to
