@@ -40,8 +40,9 @@ directed emitter, and the same scripted controllers swept over
 
 **Hypothesis under test.** The dose–response — 📏 `repair_amplitude_m`
 0 / 50 / 100 / 200 m → **7.94 → 13.24 pp** with disjoint endpoints
-([`repair_gates.md`](../results/repair_gates.md)) — is a property of *closing a
-loop on the attacked quantity*, not of Frankfurt geometry.
+([`repair_gates.md`](../results/repair_gates.md)) — is a property of **loop
+amplitude**, not of Frankfurt geometry. ⛔ Not of what the loop is scored on: the
+same file nulled that, 13.37 against 13.24.
 
 **If it reproduces.** ⭐ `n = 1 environment` stops being a limitation in
 `PLAN.md` §8 and becomes an **external-validity argument**. This is the single
