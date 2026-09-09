@@ -175,9 +175,15 @@ LINK_TIMEOUT_SCALE = 50.0
 SOFT_SEE_TAU_M = 15.0  # matches RewardWeights.tau_clearance_m
 
 
-#: Indices into the 24-dim ego block that the JAMMER can move. `PLAN.md` §1: a
-#: policy that closes a feedback loop on the quantity an adversary attacks hands
-#: that adversary a control input, and these are the only ego features it reaches.
+#: Indices into the 24-dim ego block that the JAMMER can move -- the only ego
+#: features it reaches.
+#:
+#: ⚠️ These were derived for `--mask-jammed-obs`, whose premise was `PLAN.md` §1's
+#: old sharp clause (*a loop on the quantity an adversary attacks*). That clause
+#: was REFUTED on 2026-09-04 -- `results/repair_gates.md`, 13.37 against 13.24 --
+#: and the mask itself then NULLED (`results/obs_mask_gate.md`). The index set is
+#: still correct as a statement about the emitter's reach; it is no longer
+#: evidence for a claim, and §1 no longer says what this comment used to cite.
 #:
 #: * **18** `noise_dbm` -- literally `aux["jam_mw"] + noise`, the emitter's own power.
 #: * **22** `e2e_capacity` -- SINR-derived, so the beam moves it directly.
