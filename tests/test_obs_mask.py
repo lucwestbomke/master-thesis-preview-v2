@@ -1,9 +1,15 @@
 """`EnvConfig.mask_jammed_obs` — the learned analogue of clearance-repair.
 
-`PLAN.md` §1 claims exploitability is a cost of closing a feedback loop on the
-quantity an adversary attacks. `B0Config.repair_score = "clearance"` tests that on
-the scripted side; this flag tests it on the learned side, by removing exactly the
-features the emitter can move and leaving geometry intact.
+⚠️ **The premise this flag was built for is refuted, and the flag then nulled.**
+`PLAN.md` §1 *used to* claim exploitability is a cost of closing a feedback loop on
+the quantity an adversary attacks. `B0Config.repair_score = "clearance"` tested
+that on the scripted side and REFUTED it on 2026-09-04 (13.37 against 13.24,
+`results/repair_gates.md`); this flag tested it on the learned side and nulled
+(`results/obs_mask_gate.md`). §1 now leads on loop **amplitude** instead.
+
+⛔ The tests below still stand: they assert the mask hits exactly the features the
+emitter can move and leaves geometry intact, which is a fact about the observation
+layout and not about the claim that motivated it.
 
 ⛔ The whole experiment is void if the mask hits the wrong columns, and a wrong
 column is silent — the policy still trains, just deprived of something the claim
