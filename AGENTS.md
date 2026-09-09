@@ -20,9 +20,24 @@ binding**:
 
 ## The claim
 
-> 🔍 **Exploitability is a cost of ADAPTIVITY, not of capability.** A policy that
-> closes a feedback loop on the quantity an adversary attacks hands that adversary
-> a control input into its own behaviour.
+> 🔍 **An adaptive controller cannot be defended by changing what it adapts ON —
+> only by bounding how far it adapts.** Exploitability scales with the
+> **amplitude** of a policy's positional response, not with what that response is
+> computed from. ⛔ It is a cost of ADAPTIVITY, not of capability.
+
+⛔ **The intuitive fix was pre-declared and REFUTED**, and that refutation is the
+least guessable result here: 📏 pointing the loop at **clearance** — building
+occlusion, which the jammer cannot move — scores **13.37 pp** against capacity's
+**13.24 pp**, overlapping. 🔍 `_update_repair` scores only the edges it is
+*carrying*, `on_path` comes from the router, and the router picks the widest path
+— **which the jammer sets**. The adversary reaches the loop through **routing**,
+whatever the loop is scored on.
+[`results/repair_gates.md`](results/repair_gates.md).
+
+⚠️ **This headline was wrong until 2026-09-09.** It read *"a feedback loop on the
+quantity an adversary attacks"* — the sharp clause `repair_gates.md` refuted on
+2026-09-04. `PLAN.md` §1 was corrected then and this file was not; the reframing
+is recorded in `PLAN.md` §6.
 
 📏 **Measured on a within-family controlled pair, 2026-09-04**
 ([`results/frontier.md`](results/frontier.md)): `b0-geodesic` and `B0` share the
